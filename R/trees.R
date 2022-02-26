@@ -123,6 +123,7 @@ perform_nni = function(tree_init, P, max_iter = 100, eps = 0.01, ncores = 20, ve
 }
 
 # from phangorn
+#' @keywords internal
 nnin <- function(tree, n) {
   attr(tree, "order") <- NULL
   tree1 <- tree
@@ -160,6 +161,7 @@ nnin <- function(tree, n) {
 }
 
 # from phangorn
+#' @keywords internal
 nni <- function(tree, ncores = 1) {
   tip.label <- tree$tip.label
   attr(tree, "order") <- NULL

@@ -501,7 +501,7 @@ make_group_bulks = function(groups, count_mat, df_allele, lambdas_ref, gtf_trans
 }
 
 #' Run mutitple HMMs 
-#' @export
+#' @keywords internal
 run_group_hmms = function(
     bulks, t = 1e-4, gamma = 20, theta_min = 0.08,
     exp_model = 'lnpois', alpha = 1e-4,
@@ -567,6 +567,7 @@ run_group_hmms = function(
 }
 
 #' Extract consensus CNV segments
+#'
 #' @param bulks pseudobulks dataframe
 #' @param min_LLR LLR threshold to filter CNVs 
 #' @param min_overlap minimum overlap fraction to determine count two events as as overlapping
@@ -626,6 +627,7 @@ get_segs_consensus = function(bulks, min_LLR = 20, min_overlap = 0.45) {
 }
 
 #' Fill neutral regions into consensus segments
+#'
 #' @param segs_consensus a dataframe containing info of all CNV segments from multiple samples
 #' @param segs_neu neutral segments
 #' @return collections of neutral and aberrant segments with no gaps
@@ -1228,7 +1230,7 @@ retest_bulks = function(bulks, segs_consensus, use_loh = FALSE, diploid_chroms =
     
     # retest CNVs
     bulks = bulks %>% 
-        run_group_hmms(run_hmm = F) %>%
+        run_group_hmms(run_hmm = FALSE) %>%
         mutate(
             LLR = ifelse(is.na(LLR), 0, LLR)
         )

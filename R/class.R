@@ -1,4 +1,3 @@
-
 #' @title Numbat R6 class
 #' @description Used to allow users to plot results
 #' @export

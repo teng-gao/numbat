@@ -1,8 +1,9 @@
 ########################### Visualizations ############################
 
+
 pal = RColorBrewer::brewer.pal(n = 8, 'Set1')
 
-#' @export
+#' @keywords internal
 cnv_colors = c("neu" = "gray", 
         "del_up" = "royalblue", "del_down" = "darkblue", 
         "loh_up" = "darkgreen", "loh_down" = "olivedrab4",
@@ -30,7 +31,7 @@ cnv_colors = c("neu" = "gray",
         'major' = '#66C2A5', 'minor' = '#FC8D62'
     )
 
-#' @export
+#' @keywords internal
 cnv_labels = names(cnv_colors) %>%
     str_remove_all('_') %>% 
     str_to_upper() %>%
@@ -1225,6 +1226,7 @@ tree_heatmap = function(joint_post, gtree, ratio = 1, limit = 5, cell_dict = NUL
     return(panel)
 }
 
+
 #' @export
 plot_consensus = function(segs) {
   
@@ -1273,6 +1275,8 @@ plot_consensus = function(segs) {
         expand = expansion(mult = 0.05)
     )
 }
+
+
 
 #' @export
 plot_phylo_heatmap = function(
