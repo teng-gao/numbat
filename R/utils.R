@@ -1341,11 +1341,12 @@ fit_gpois = function(Y_obs, lambda_ref, d) {
 #' @param Y_obs numeric vector Gene expression counts
 #' @param lambda_ref numeric vector Reference expression levels
 #' @param d numeric Total library size
+#' @param mu numeric Mean in PLN model
+#' @param sig numeric Standard deviation in PLN model
 #' @return numeric Joint log likelihood
 #' @keywords internal
 l_lnpois = function(Y_obs, lambda_ref, d, mu, sig, phi = 1) {
     if (any(sig <= 0)) {stop(glue('negative sigma. value: {sig}'))}
-    if (length(sig) == 1) {sig = rep(sig, length(Y_obs))}
     sum(log(dpoilog(Y_obs, mu + log(phi * d * lambda_ref), sig)))
 }
 
