@@ -21,16 +21,16 @@ viterbi_compute <- function(log_delta, logprob, logPi, n, m, nu, z) {
     .Call('_numbat_viterbi_compute', PACKAGE = 'numbat', log_delta, logprob, logPi, n, m, nu, z)
 }
 
-l_lnpois_cpp <- function(Y_obs, lambda_ref, d, mu, sig) {
-    .Call('_numbat_l_lnpois_cpp', PACKAGE = 'numbat', Y_obs, lambda_ref, d, mu, sig)
-}
-
 fit_lnpois_cpp <- function() {
     invisible(.Call('_numbat_fit_lnpois_cpp', PACKAGE = 'numbat'))
 }
 
 poilog1 <- function(x, my, sig) {
     .Call('_numbat_poilog1', PACKAGE = 'numbat', x, my, sig)
+}
+
+l_lnpois_cpp <- function(Y_obs, lambda_ref, d, mu, sig) {
+    .Call('_numbat_l_lnpois_cpp', PACKAGE = 'numbat', Y_obs, lambda_ref, d, mu, sig)
 }
 
 allChildrenCPP <- function(E) {

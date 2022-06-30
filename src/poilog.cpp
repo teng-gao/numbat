@@ -1,8 +1,5 @@
-
-// #include <Rcpp.h>
+#include <Rcpp.h>
 #include <R_ext/Applic.h>
-#include <poilog.h>
-// #include <RcppArmadillo.h>
 
 // refer to:
 // https://github.com/evanbiederstedt/poilogcpp
@@ -13,16 +10,6 @@ struct My_fparams {
    double my; 
    double fac;
 };
-
-// [[Rcpp::export]]
-std::vector<double> poilog1(std::vector<int> x, arma::vec my, double sig){
-   int nrN = x.size();
-   std::vector<double> vect(nrN);
-   for (int i = 0; i < nrN; i++){
-      vect[i] = poilog(x[i], my[i], sig);
-   }
-   return vect;
-}
 
 double maxf(int x, double my, double sig){
    double d,z;
@@ -122,3 +109,30 @@ double poilog(int x, double my, double sig) {
    free(work);
    return(val);
 }
+
+// [[Rcpp::export]]
+std::vector<double> poilog1(std::vector<int> x, std::vector<double> my, std::vector<double> sig) {
+   int nrN = x.size();
+   std::vector<double> vect(nrN);
+   for (int i = 0; i < nrN; i++){
+      vect[i] = poilog(x[i], my[i], sig[i]);
+   }
+   return vect;
+}
+
+// [[Rcpp::export]]
+std::vector<double> l_lnpois_cpp(std::vector<int> Y_obs, std::vector<double> lambda_ref, int d, double mu, double sig) {
+
+    int n = Y_obs.size();
+
+    std::vector<double> muvec(n);
+    std::vector<double> sigvec(n);
+
+    for (int i = 0; i < n; i++) {
+        muvec[i] = mu + log(d * lambda_ref[i]);
+        sigvec[i] = sig;
+    }
+
+    return poilog1(Y_obs, muvec, sigvec);
+    // return(lambda_ref);
+};

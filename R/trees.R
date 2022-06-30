@@ -146,7 +146,6 @@ nni <- function(tree, ncores = 1) {
   k <- min(tree$edge[, 1]) - 1
   n <- sum(tree$edge[, 2] > k)
   result <- vector("list", 2 * n)
-  l <- 1
   
   result = Reduce('c', 
     mclapply(

@@ -13,7 +13,7 @@ NULL
 #' @return NULL
 #' @keywords internal
 dpoilog <- function(x, mu, sig, log=FALSE){
-  if (length(sig) > 1) stop('Only sigma value supported') 
+  if (!(length(x) == length(mu) & length(x) == length(sig))) stop('All parameters must be same length') 
   if (any((x[x!=0]/trunc(x[x!=0]))!=1)) stop('all x must be integers')
   if (any(x<0)) stop('one or several values of x are negative')
   if (!all(is.finite(c(mu,sig)))) {
