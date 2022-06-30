@@ -1,14 +1,16 @@
 // #include <Rcpp.h>
 #include <RcppArmadillo.h>
 // [[Rcpp::depends(RcppArmadillo)]]
+#include <RcppParallel.h>
 using namespace Rcpp;
+using namespace RcppParallel;
 
 // Modified from R-package `ape' by Emmanuel Paradis and Klaus Schliep
 static int iii;
 
-void bar_reorderRcpp(int node, int nTips, const IntegerVector & e1,
-    const IntegerVector & e2, IntegerVector neworder, const IntegerVector & L,
-    const IntegerVector & xi, const IntegerVector & xj)
+void bar_reorderRcpp(int node, int nTips, const arma::Col<int> & e1,
+    const arma::Col<int> & e2, std::vector<int> & neworder, const arma::Col<int> & L,
+    const arma::Col<int> & xi, const arma::Col<int> & xj)
 {
     int i = node - nTips - 1, j, k;
 
@@ -22,37 +24,37 @@ void bar_reorderRcpp(int node, int nTips, const IntegerVector & e1,
     }
 }
 
-// [[Rcpp::export]]
-IntegerMatrix reorder_rows(IntegerMatrix x, IntegerVector y) {
+// // [[Rcpp::export]]
+arma::Mat<int> reorder_rows(arma::Mat<int> x, arma::Col<int> y) {
 
     // Create an output matrix
-    IntegerMatrix out(x.nrow(), x.ncol());
+    arma::Mat<int> out = x;
 
     // Loop through each row and copy the data. 
-    for (int i = 0; i < y.length(); ++i) {
-        out(i,_) = x(y[i]-1,_);
+    for (int i = 0; i < y.n_elem; ++i) {
+        out.row(i) = x.row(y[i]-1);
     }
 
     return out;
 }
 
 // [[Rcpp::export]]
-IntegerMatrix reorderRcpp(IntegerMatrix E) {
+arma::Mat<int> reorderRcpp(arma::Mat<int> E) {
 
-    int n = E.nrow();
+    int n = E.n_rows;
     int nTips = n/2 + 1;
     int root = nTips + 1;
 
-    IntegerVector e1 = E( _, 0);
-    IntegerVector e2 = E( _, 1);
+    arma::Col<int> e1 = E.col(0);
+    arma::Col<int> e2 = E.col(1);
     int m = max(e1), k, j;
     int nnode = m - nTips;
     
-    IntegerVector L(n);
-    IntegerVector neworder(n);
-    IntegerVector pos(nnode);
-    IntegerVector xi(nnode);
-    IntegerVector xj(nnode);
+    arma::Col<int> L(n);
+    std::vector<int> neworder(n);
+    arma::Col<int> pos(nnode);
+    arma::Col<int> xi(nnode);
+    arma::Col<int> xj(nnode);
     for (int i = 0; i < n; i++) {
         xj[e1[i] - nTips - 1]++;
     }
@@ -67,6 +69,7 @@ IntegerMatrix reorderRcpp(IntegerMatrix E) {
     }
 
     iii = n - 1;
+
     bar_reorderRcpp(root, nTips, e1, e2, neworder, L, xi, xj);
 
     E = reorder_rows(E, neworder);
@@ -74,66 +77,103 @@ IntegerMatrix reorderRcpp(IntegerMatrix E) {
     return E;
 }
 
-IntegerVector cwhich(LogicalVector x) {
-    IntegerVector idx = seq(0, x.size()-1);
-    return idx[x];
-}
-
 // Modified from R-package `phangorn' by Klaus Schliep
 // [[Rcpp::export]]
-List nnin_cpp(const List tree, const int n) {
+std::vector<arma::Mat<int>> nnin_cpp(const arma::Mat<int> E, const int n) {
 
-    List tree1 = clone(tree);
-    List tree2 = clone(tree);
-    IntegerMatrix edge = tree["edge"];
-    IntegerVector parent = edge(_, 0);
-    IntegerVector child = edge(_, 1);
+    arma::Mat<int> E1 = E;
+    arma::Mat<int> E2 = E;
+    arma::Col<int> parent = E.col(0);
+    arma::Col<int> child = E.col(1);
     int k = min(parent) - 1;
-    int ind = cwhich(wrap(child > k))[n-1];
+    arma::uvec indvec = find(child > k);
+    int ind = indvec[n-1];
     int p1 = parent[ind];
     int p2 = child[ind];
-    IntegerVector ind1_vec = cwhich(wrap(parent == p1));
-    ind1_vec = ind1_vec[ind1_vec != ind];
+    arma::uvec ind1_vec = find(parent == p1);
+    ind1_vec = ind1_vec.elem(find(ind1_vec != ind));
     int ind1 = ind1_vec[0];
-    IntegerVector ind2 = cwhich(wrap(parent == p2));
+    arma::uvec ind2 = find(parent == p2);
+    
     int e1 = child[ind1];
     int e2 = child[ind2[0]];
     int e3 = child[ind2[1]];
 
-    IntegerMatrix edge1 = tree1["edge"];
-    edge1(ind1, 1) = e2;
-    edge1(ind2[0], 1) = e1;
+    E1(ind1, 1) = e2;
+    E1(ind2[0], 1) = e1;
+    E2(ind1, 1) = e3;
+    E2(ind2[1], 1) = e1;
 
-    IntegerMatrix edge2 = tree2["edge"];
-    edge2(ind1, 1) = e3;
-    edge2(ind2[1], 1) = e1;
+    std::vector<arma::Mat<int>> res(2);
 
-    tree1["edge"] = reorderRcpp(edge1);
-    tree2["edge"] = reorderRcpp(edge2);
+    res[0] = reorderRcpp(E1);
+    res[1] = reorderRcpp(E2);
 
-    tree1["tip.label"] = R_NilValue;
-    tree2["tip.label"] = R_NilValue;
-
-    List res = List::create(tree1, tree2);
-    
     return res;
 }
 
+// Serial version
 // [[Rcpp::export]]
-std::vector<List> nni_cpp(const List tree) {
+List nni_cpp(const List tree) {
     
-    IntegerMatrix E = tree["edge"];
+    arma::Mat<int> E = tree["edge"];
+    int Nnode = tree["Nnode"];
 
-    int n = E.nrow()/2 - 1;
+    int n = E.n_rows/2 - 1;
 
-    std::vector<List> res(2*n);
+    List res(2*n);
 
     for (int i = 0; i < n; i++) {
-        List trees = nnin_cpp(tree, i+1);
-        res[2*i] = trees[0];
-        res[2*i+1] = trees[1];
+        std::vector<arma::Mat<int>> trees = nnin_cpp(E, i+1);
+        arma::Mat<int> E1 = trees[0];
+        arma::Mat<int> E2 = trees[1];
+        
+        List tree1 = List::create(Named("edge") = E1, Named("Nnode") = Nnode);
+        List tree2 = List::create(Named("edge") = E2, Named("Nnode") = Nnode);
+
+        res[2*i] = tree1;
+        res[2*i+1] = tree2;
     }
 
     return res;
 
 }
+
+
+// struct get_nni : public Worker {
+
+//     const arma::Mat<int> E;
+
+//     std::vector<arma::Mat<int>> res;
+
+//     // initialize with source and destination
+//     get_nni(const arma::Mat<int> E, std::vector<arma::Mat<int>> res): E(E), res(res) {}
+
+//     // take the square root of the range of elements requested
+//     void operator()(std::size_t begin, std::size_t end) {
+//         for (std::size_t i = begin; i < end; i++) {
+//             std::vector<arma::Mat<int>> trees = nnin_cpp(E, i+1);
+//             arma::Mat<int> tree1 = trees[0];
+//             arma::Mat<int> tree2 = trees[1];
+//             res[2*i] = tree1;
+//             res[2*i+1] = tree2;
+//         }
+//     }
+// };
+
+// // [[Rcpp::export]]
+// std::vector<arma::Mat<int>> nni_cpp_parallel(const List tree) {
+    
+//     arma::Mat<int> E = tree["edge"];
+
+//     int n = E.n_rows/2 - 1;
+
+//     std::vector<arma::Mat<int>> res(2*n);
+
+//     get_nni get_nni(E, res);
+
+//     parallelFor(0, n, get_nni);
+
+//     return res;
+
+// }

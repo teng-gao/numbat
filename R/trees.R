@@ -66,7 +66,7 @@ perform_nni = function(tree_init, P, max_iter = 100, eps = 0.01, ncores = 1, ver
         
         ptm = proc.time()
 
-        neighbours = nni(tree_current, ncores = ncores)
+        neighbours = nni_cpp(tree_current)
 
         RcppParallel::setThreadOptions(numThreads = ncores)
 

@@ -25,6 +25,18 @@ fit_lnpois_cpp <- function() {
     invisible(.Call('_numbat_fit_lnpois_cpp', PACKAGE = 'numbat'))
 }
 
+reorderRcpp <- function(E) {
+    .Call('_numbat_reorderRcpp', PACKAGE = 'numbat', E)
+}
+
+nnin_cpp <- function(E, n) {
+    .Call('_numbat_nnin_cpp', PACKAGE = 'numbat', E, n)
+}
+
+nni_cpp <- function(tree) {
+    .Call('_numbat_nni_cpp', PACKAGE = 'numbat', tree)
+}
+
 poilog1 <- function(x, my, sig) {
     .Call('_numbat_poilog1', PACKAGE = 'numbat', x, my, sig)
 }
