@@ -25,7 +25,7 @@ public:
 
         std::vector<double> l = l_lnpois_cpp(Y_obs, lambda_ref, d, mu, sig);
 
-        return -l[0];
+        return -log(l[0]);
     };
 };
 
