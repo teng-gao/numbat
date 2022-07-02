@@ -135,4 +135,4 @@ std::vector<double> l_lnpois_cpp(std::vector<int> Y_obs, std::vector<double> lam
 
     return poilog1(Y_obs, muvec, sigvec);
     // return(lambda_ref);
-};
+}

@@ -12,6 +12,10 @@ l_lnpois(Y_obs, lambda_ref, d, mu, sig, phi = 1)
 \item{lambda_ref}{numeric vector Reference expression levels}
 
 \item{d}{numeric Total library size}
+
+\item{mu}{numeric Mean in PLN model}
+
+\item{sig}{numeric Standard deviation in PLN model}
 }
 \value{
 numeric Joint log likelihood

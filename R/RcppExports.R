@@ -25,26 +25,6 @@ fit_lnpois_cpp <- function() {
     invisible(.Call('_numbat_fit_lnpois_cpp', PACKAGE = 'numbat'))
 }
 
-reorderRcpp <- function(E) {
-    .Call('_numbat_reorderRcpp', PACKAGE = 'numbat', E)
-}
-
-nnin_cpp <- function(E, n) {
-    .Call('_numbat_nnin_cpp', PACKAGE = 'numbat', E, n)
-}
-
-nni_cpp <- function(tree) {
-    .Call('_numbat_nni_cpp', PACKAGE = 'numbat', tree)
-}
-
-poilog1 <- function(x, my, sig) {
-    .Call('_numbat_poilog1', PACKAGE = 'numbat', x, my, sig)
-}
-
-l_lnpois_cpp <- function(Y_obs, lambda_ref, d, mu, sig) {
-    .Call('_numbat_l_lnpois_cpp', PACKAGE = 'numbat', Y_obs, lambda_ref, d, mu, sig)
-}
-
 allChildrenCPP <- function(E) {
     .Call('_numbat_allChildrenCPP', PACKAGE = 'numbat', E)
 }
@@ -59,5 +39,33 @@ score_tree_cpp <- function(E, P) {
 
 score_nni_parallel <- function(trees, P) {
     .Call('_numbat_score_nni_parallel', PACKAGE = 'numbat', trees, P)
+}
+
+reorder_rows <- function(x, y) {
+    .Call('_numbat_reorder_rows', PACKAGE = 'numbat', x, y)
+}
+
+reorderRcpp <- function(E) {
+    .Call('_numbat_reorderRcpp', PACKAGE = 'numbat', E)
+}
+
+nnin_cpp <- function(E, n) {
+    .Call('_numbat_nnin_cpp', PACKAGE = 'numbat', E, n)
+}
+
+nni_cpp <- function(tree) {
+    .Call('_numbat_nni_cpp', PACKAGE = 'numbat', tree)
+}
+
+nni_cpp_parallel <- function(tree, P) {
+    .Call('_numbat_nni_cpp_parallel', PACKAGE = 'numbat', tree, P)
+}
+
+poilog1 <- function(x, my, sig) {
+    .Call('_numbat_poilog1', PACKAGE = 'numbat', x, my, sig)
+}
+
+l_lnpois_cpp <- function(Y_obs, lambda_ref, d, mu, sig) {
+    .Call('_numbat_l_lnpois_cpp', PACKAGE = 'numbat', Y_obs, lambda_ref, d, mu, sig)
 }
 

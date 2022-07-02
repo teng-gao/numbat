@@ -93,68 +93,6 @@ BEGIN_RCPP
     return R_NilValue;
 END_RCPP
 }
-// reorderRcpp
-arma::Mat<int> reorderRcpp(arma::Mat<int> E);
-RcppExport SEXP _numbat_reorderRcpp(SEXP ESEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< arma::Mat<int> >::type E(ESEXP);
-    rcpp_result_gen = Rcpp::wrap(reorderRcpp(E));
-    return rcpp_result_gen;
-END_RCPP
-}
-// nnin_cpp
-std::vector<arma::Mat<int>> nnin_cpp(const arma::Mat<int> E, const int n);
-RcppExport SEXP _numbat_nnin_cpp(SEXP ESEXP, SEXP nSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< const arma::Mat<int> >::type E(ESEXP);
-    Rcpp::traits::input_parameter< const int >::type n(nSEXP);
-    rcpp_result_gen = Rcpp::wrap(nnin_cpp(E, n));
-    return rcpp_result_gen;
-END_RCPP
-}
-// nni_cpp
-List nni_cpp(const List tree);
-RcppExport SEXP _numbat_nni_cpp(SEXP treeSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< const List >::type tree(treeSEXP);
-    rcpp_result_gen = Rcpp::wrap(nni_cpp(tree));
-    return rcpp_result_gen;
-END_RCPP
-}
-// poilog1
-std::vector<double> poilog1(std::vector<int> x, std::vector<double> my, std::vector<double> sig);
-RcppExport SEXP _numbat_poilog1(SEXP xSEXP, SEXP mySEXP, SEXP sigSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< std::vector<int> >::type x(xSEXP);
-    Rcpp::traits::input_parameter< std::vector<double> >::type my(mySEXP);
-    Rcpp::traits::input_parameter< std::vector<double> >::type sig(sigSEXP);
-    rcpp_result_gen = Rcpp::wrap(poilog1(x, my, sig));
-    return rcpp_result_gen;
-END_RCPP
-}
-// l_lnpois_cpp
-std::vector<double> l_lnpois_cpp(std::vector<int> Y_obs, std::vector<double> lambda_ref, int d, double mu, double sig);
-RcppExport SEXP _numbat_l_lnpois_cpp(SEXP Y_obsSEXP, SEXP lambda_refSEXP, SEXP dSEXP, SEXP muSEXP, SEXP sigSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< std::vector<int> >::type Y_obs(Y_obsSEXP);
-    Rcpp::traits::input_parameter< std::vector<double> >::type lambda_ref(lambda_refSEXP);
-    Rcpp::traits::input_parameter< int >::type d(dSEXP);
-    Rcpp::traits::input_parameter< double >::type mu(muSEXP);
-    Rcpp::traits::input_parameter< double >::type sig(sigSEXP);
-    rcpp_result_gen = Rcpp::wrap(l_lnpois_cpp(Y_obs, lambda_ref, d, mu, sig));
-    return rcpp_result_gen;
-END_RCPP
-}
 // allChildrenCPP
 std::vector<std::vector<int>> allChildrenCPP(const arma::Mat<int> E);
 RcppExport SEXP _numbat_allChildrenCPP(SEXP ESEXP) {
@@ -203,6 +141,92 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// reorder_rows
+arma::Mat<int> reorder_rows(arma::Mat<int> x, arma::Col<int> y);
+RcppExport SEXP _numbat_reorder_rows(SEXP xSEXP, SEXP ySEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< arma::Mat<int> >::type x(xSEXP);
+    Rcpp::traits::input_parameter< arma::Col<int> >::type y(ySEXP);
+    rcpp_result_gen = Rcpp::wrap(reorder_rows(x, y));
+    return rcpp_result_gen;
+END_RCPP
+}
+// reorderRcpp
+arma::Mat<int> reorderRcpp(arma::Mat<int> E);
+RcppExport SEXP _numbat_reorderRcpp(SEXP ESEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< arma::Mat<int> >::type E(ESEXP);
+    rcpp_result_gen = Rcpp::wrap(reorderRcpp(E));
+    return rcpp_result_gen;
+END_RCPP
+}
+// nnin_cpp
+std::vector<arma::Mat<int>> nnin_cpp(const arma::Mat<int> E, const int n);
+RcppExport SEXP _numbat_nnin_cpp(SEXP ESEXP, SEXP nSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const arma::Mat<int> >::type E(ESEXP);
+    Rcpp::traits::input_parameter< const int >::type n(nSEXP);
+    rcpp_result_gen = Rcpp::wrap(nnin_cpp(E, n));
+    return rcpp_result_gen;
+END_RCPP
+}
+// nni_cpp
+List nni_cpp(const List tree);
+RcppExport SEXP _numbat_nni_cpp(SEXP treeSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const List >::type tree(treeSEXP);
+    rcpp_result_gen = Rcpp::wrap(nni_cpp(tree));
+    return rcpp_result_gen;
+END_RCPP
+}
+// nni_cpp_parallel
+NumericVector nni_cpp_parallel(const List tree, arma::mat P);
+RcppExport SEXP _numbat_nni_cpp_parallel(SEXP treeSEXP, SEXP PSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const List >::type tree(treeSEXP);
+    Rcpp::traits::input_parameter< arma::mat >::type P(PSEXP);
+    rcpp_result_gen = Rcpp::wrap(nni_cpp_parallel(tree, P));
+    return rcpp_result_gen;
+END_RCPP
+}
+// poilog1
+std::vector<double> poilog1(std::vector<int> x, std::vector<double> my, std::vector<double> sig);
+RcppExport SEXP _numbat_poilog1(SEXP xSEXP, SEXP mySEXP, SEXP sigSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< std::vector<int> >::type x(xSEXP);
+    Rcpp::traits::input_parameter< std::vector<double> >::type my(mySEXP);
+    Rcpp::traits::input_parameter< std::vector<double> >::type sig(sigSEXP);
+    rcpp_result_gen = Rcpp::wrap(poilog1(x, my, sig));
+    return rcpp_result_gen;
+END_RCPP
+}
+// l_lnpois_cpp
+std::vector<double> l_lnpois_cpp(std::vector<int> Y_obs, std::vector<double> lambda_ref, int d, double mu, double sig);
+RcppExport SEXP _numbat_l_lnpois_cpp(SEXP Y_obsSEXP, SEXP lambda_refSEXP, SEXP dSEXP, SEXP muSEXP, SEXP sigSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< std::vector<int> >::type Y_obs(Y_obsSEXP);
+    Rcpp::traits::input_parameter< std::vector<double> >::type lambda_ref(lambda_refSEXP);
+    Rcpp::traits::input_parameter< int >::type d(dSEXP);
+    Rcpp::traits::input_parameter< double >::type mu(muSEXP);
+    Rcpp::traits::input_parameter< double >::type sig(sigSEXP);
+    rcpp_result_gen = Rcpp::wrap(l_lnpois_cpp(Y_obs, lambda_ref, d, mu, sig));
+    return rcpp_result_gen;
+END_RCPP
+}
 
 static const R_CallMethodDef CallEntries[] = {
     {"_numbat_cppdbbinom", (DL_FUNC) &_numbat_cppdbbinom, 5},
@@ -211,15 +235,17 @@ static const R_CallMethodDef CallEntries[] = {
     {"_numbat_forward_backward_compute", (DL_FUNC) &_numbat_forward_backward_compute, 5},
     {"_numbat_viterbi_compute", (DL_FUNC) &_numbat_viterbi_compute, 7},
     {"_numbat_fit_lnpois_cpp", (DL_FUNC) &_numbat_fit_lnpois_cpp, 0},
-    {"_numbat_reorderRcpp", (DL_FUNC) &_numbat_reorderRcpp, 1},
-    {"_numbat_nnin_cpp", (DL_FUNC) &_numbat_nnin_cpp, 2},
-    {"_numbat_nni_cpp", (DL_FUNC) &_numbat_nni_cpp, 1},
-    {"_numbat_poilog1", (DL_FUNC) &_numbat_poilog1, 3},
-    {"_numbat_l_lnpois_cpp", (DL_FUNC) &_numbat_l_lnpois_cpp, 5},
     {"_numbat_allChildrenCPP", (DL_FUNC) &_numbat_allChildrenCPP, 1},
     {"_numbat_CgetQ", (DL_FUNC) &_numbat_CgetQ, 3},
     {"_numbat_score_tree_cpp", (DL_FUNC) &_numbat_score_tree_cpp, 2},
     {"_numbat_score_nni_parallel", (DL_FUNC) &_numbat_score_nni_parallel, 2},
+    {"_numbat_reorder_rows", (DL_FUNC) &_numbat_reorder_rows, 2},
+    {"_numbat_reorderRcpp", (DL_FUNC) &_numbat_reorderRcpp, 1},
+    {"_numbat_nnin_cpp", (DL_FUNC) &_numbat_nnin_cpp, 2},
+    {"_numbat_nni_cpp", (DL_FUNC) &_numbat_nni_cpp, 1},
+    {"_numbat_nni_cpp_parallel", (DL_FUNC) &_numbat_nni_cpp_parallel, 2},
+    {"_numbat_poilog1", (DL_FUNC) &_numbat_poilog1, 3},
+    {"_numbat_l_lnpois_cpp", (DL_FUNC) &_numbat_l_lnpois_cpp, 5},
     {NULL, NULL, 0}
 };
 
