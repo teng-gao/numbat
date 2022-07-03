@@ -85,12 +85,28 @@ BEGIN_RCPP
 END_RCPP
 }
 // fit_lnpois_cpp
-void fit_lnpois_cpp();
-RcppExport SEXP _numbat_fit_lnpois_cpp() {
+arma::rowvec fit_lnpois_cpp(std::vector<int> Y_obs, std::vector<double> lambda_ref, int d);
+RcppExport SEXP _numbat_fit_lnpois_cpp(SEXP Y_obsSEXP, SEXP lambda_refSEXP, SEXP dSEXP) {
 BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
-    fit_lnpois_cpp();
-    return R_NilValue;
+    Rcpp::traits::input_parameter< std::vector<int> >::type Y_obs(Y_obsSEXP);
+    Rcpp::traits::input_parameter< std::vector<double> >::type lambda_ref(lambda_refSEXP);
+    Rcpp::traits::input_parameter< int >::type d(dSEXP);
+    rcpp_result_gen = Rcpp::wrap(fit_lnpois_cpp(Y_obs, lambda_ref, d));
+    return rcpp_result_gen;
+END_RCPP
+}
+// fit_lnpois_parallel
+Rcpp::NumericMatrix fit_lnpois_parallel(arma::Mat<int> count_mat, std::vector<double> lambda_ref);
+RcppExport SEXP _numbat_fit_lnpois_parallel(SEXP count_matSEXP, SEXP lambda_refSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< arma::Mat<int> >::type count_mat(count_matSEXP);
+    Rcpp::traits::input_parameter< std::vector<double> >::type lambda_ref(lambda_refSEXP);
+    rcpp_result_gen = Rcpp::wrap(fit_lnpois_parallel(count_mat, lambda_ref));
+    return rcpp_result_gen;
 END_RCPP
 }
 // allChildrenCPP
@@ -213,7 +229,7 @@ BEGIN_RCPP
 END_RCPP
 }
 // l_lnpois_cpp
-std::vector<double> l_lnpois_cpp(std::vector<int> Y_obs, std::vector<double> lambda_ref, int d, double mu, double sig);
+double l_lnpois_cpp(std::vector<int> Y_obs, std::vector<double> lambda_ref, int d, double mu, double sig);
 RcppExport SEXP _numbat_l_lnpois_cpp(SEXP Y_obsSEXP, SEXP lambda_refSEXP, SEXP dSEXP, SEXP muSEXP, SEXP sigSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
@@ -234,7 +250,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"_numbat_likelihood_compute", (DL_FUNC) &_numbat_likelihood_compute, 5},
     {"_numbat_forward_backward_compute", (DL_FUNC) &_numbat_forward_backward_compute, 5},
     {"_numbat_viterbi_compute", (DL_FUNC) &_numbat_viterbi_compute, 7},
-    {"_numbat_fit_lnpois_cpp", (DL_FUNC) &_numbat_fit_lnpois_cpp, 0},
+    {"_numbat_fit_lnpois_cpp", (DL_FUNC) &_numbat_fit_lnpois_cpp, 3},
+    {"_numbat_fit_lnpois_parallel", (DL_FUNC) &_numbat_fit_lnpois_parallel, 2},
     {"_numbat_allChildrenCPP", (DL_FUNC) &_numbat_allChildrenCPP, 1},
     {"_numbat_CgetQ", (DL_FUNC) &_numbat_CgetQ, 3},
     {"_numbat_score_tree_cpp", (DL_FUNC) &_numbat_score_tree_cpp, 2},

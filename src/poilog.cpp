@@ -121,18 +121,15 @@ std::vector<double> poilog1(std::vector<int> x, std::vector<double> my, std::vec
 }
 
 // [[Rcpp::export]]
-std::vector<double> l_lnpois_cpp(std::vector<int> Y_obs, std::vector<double> lambda_ref, int d, double mu, double sig) {
+double l_lnpois_cpp(std::vector<int> Y_obs, std::vector<double> lambda_ref, int d, double mu, double sig) {
 
     int n = Y_obs.size();
 
-    std::vector<double> muvec(n);
-    std::vector<double> sigvec(n);
+    double l = 0;
 
     for (int i = 0; i < n; i++) {
-        muvec[i] = mu + log(d * lambda_ref[i]);
-        sigvec[i] = sig;
+        l += log(poilog(Y_obs[i], mu + log(d * lambda_ref[i]), std::pow(sig, 2)));
     }
 
-    return poilog1(Y_obs, muvec, sigvec);
-    // return(lambda_ref);
+    return l;
 }
