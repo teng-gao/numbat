@@ -25,10 +25,6 @@ fit_lnpois_cpp <- function(Y_obs, lambda_ref, d) {
     .Call('_numbat_fit_lnpois_cpp', PACKAGE = 'numbat', Y_obs, lambda_ref, d)
 }
 
-fit_lnpois_parallel <- function(count_mat, lambda_ref) {
-    .Call('_numbat_fit_lnpois_parallel', PACKAGE = 'numbat', count_mat, lambda_ref)
-}
-
 allChildrenCPP <- function(E) {
     .Call('_numbat_allChildrenCPP', PACKAGE = 'numbat', E)
 }
