@@ -10,8 +10,8 @@
 // [[Rcpp::depends(roptim)]]
 using namespace roptim;
 
-#include <RcppParallel.h>
-using namespace RcppParallel;
+// #include <RcppParallel.h>
+// using namespace RcppParallel;
 
 double l_lnpois_cpp(std::vector<int> Y_obs, std::vector<double> lambda_ref, int d, double mu, double sig);
 
