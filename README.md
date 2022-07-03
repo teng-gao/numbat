@@ -8,7 +8,7 @@
 
 <img src="logo.png" align="right" width="150">
 
-Numbat is a haplotype-enhanced CNV caller from single-cell transcriptomics data. It integrates signals from gene expression, allelic ratio, and population-derived haplotype information to accurately infer allele-specific CNVs in single cells and reconstruct their lineage relationship. 
+Numbat is a haplotype-aware CNV caller from single-cell transcriptomics data. It integrates signals from gene expression, allelic ratio, and population-derived haplotype information to accurately infer allele-specific CNVs in single cells and reconstruct their lineage relationship. 
 
 Numbat can be used to:
  1. Detect allele-specific copy number variations from scRNA-seq 
@@ -23,3 +23,6 @@ Numbat does not require paired DNA or genotype data and operates solely on the d
 
 # User Guide
 For a complete guide, please see [Numbat User Guide](https://kharchenkolab.github.io/numbat/).
+
+# Questions?
+We appreciate your feedback! Please raise a github issue or [email](mailto:tgaoteng@gmail.com) us.

@@ -1,8 +1,21 @@
+
 #include <Rcpp.h>
 #include <R_ext/Applic.h>
 
+using namespace Rcpp;
+
 // refer to:
 // https://github.com/evanbiederstedt/poilogcpp
+
+// Function declarations
+double poilog(int x, double my, double sig);
+double bipoilog(int x, int y, double my1, double my2, double sig1, double sig2, double ro);
+double maxf(int x, double my, double sig);
+double upper(int x, double m, double my, double sig);
+double lower(int x, double m, double my, double sig);
+double my_f(double z, int x, double my, double sig, double fac);
+void my_f_vec(double *z, int n, void *p);
+std::vector<double> poilog1(std::vector<int> x, std::vector<double> my, std::vector<double> sig);
 
 struct My_fparams { 
    int x; 
@@ -10,6 +23,16 @@ struct My_fparams {
    double my; 
    double fac;
 };
+
+// [[Rcpp::export]]
+std::vector<double> poilog1(std::vector<int> x, std::vector<double> my, std::vector<double> sig){
+   int nrN = x.size();
+   std::vector<double> vect(nrN);
+   for (int i = 0; i < nrN; i++) {
+      vect[i] = poilog(x[i], my[i], sig[i]);
+   }
+   return vect;
+}
 
 double maxf(int x, double my, double sig){
    double d,z;
@@ -111,17 +134,7 @@ double poilog(int x, double my, double sig) {
 }
 
 // [[Rcpp::export]]
-std::vector<double> poilog1(std::vector<int> x, std::vector<double> my, std::vector<double> sig) {
-   int nrN = x.size();
-   std::vector<double> vect(nrN);
-   for (int i = 0; i < nrN; i++){
-      vect[i] = poilog(x[i], my[i], sig[i]);
-   }
-   return vect;
-}
-
-// [[Rcpp::export]]
-double l_lnpois_cpp(std::vector<int> Y_obs, std::vector<double> lambda_ref, int d, double mu, double sig) {
+double l_lnpois_cpp(std::vector<int> Y_obs, std::vector<double> lambda_ref, int d, double mu, double sig, double phi = 1.0) {
 
    int n = Y_obs.size();
 
@@ -129,7 +142,7 @@ double l_lnpois_cpp(std::vector<int> Y_obs, std::vector<double> lambda_ref, int 
    double p = 0;
 
    for (int i = 0; i < n; i++) {
-      p = poilog(Y_obs[i], mu + log(d * lambda_ref[i]), std::pow(sig, 2));
+      p = poilog(Y_obs[i], mu + log(phi * d * lambda_ref[i]), std::pow(sig, 2));
       if (p == 0) {p = 1e-15;}
       l += log(p);
    }

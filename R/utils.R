@@ -2000,7 +2000,6 @@ fit_snp_rate = function(gene_snps, gene_length) {
     return(fit$par)
 }
 
-
 ########################### Benchmarking ############################
 
 subtract_ranges = function(gr1, gr2) {
