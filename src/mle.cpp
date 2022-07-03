@@ -51,6 +51,44 @@ arma::rowvec fit_lnpois_cpp(std::vector<int> Y_obs, std::vector<double> lambda_r
   return opt.par().t();
 }
 
+class fit_phi : public Functor {
+
+    public:
+    
+    const std::vector<int> Y_obs;
+    const std::vector<double> lambda_ref;
+    const int d;
+    const double mu;
+    const double sig;
+
+    // initialize with source and destination
+    fit_phi(std::vector<int> Y_obs, const std::vector<double> lambda_ref, const int d, const double mu, const double sig): 
+        Y_obs(Y_obs), lambda_ref(lambda_ref), d(d), mu(mu), sig(sig) {}
+
+    double operator()(const arma::vec &phi) override {
+        return -l_lnpois_cpp(Y_obs, lambda_ref, d, mu, sig, phi(0));
+    };
+};
+
+// [[Rcpp::export]]
+double fit_phi_cpp(std::vector<int> Y_obs, std::vector<double> lambda_ref, int d, double mu, double sig) {
+
+  fit_phi model(Y_obs, lambda_ref, d, mu, sig);
+
+  Roptim<fit_phi> opt("L-BFGS-B");
+  opt.control.trace = 0;
+  opt.set_hessian(false);
+  arma::vec lower = {0.1};
+  arma::vec upper = {10};
+  opt.set_lower(lower);
+  opt.set_upper(upper);
+  arma::vec phi = {1};
+  opt.minimize(model, phi);
+  arma::vec phi_mle = opt.par();
+
+  return phi_mle(0);
+}
+
 // struct fit_worker : public Worker {
 
 //     const arma::Mat<int> count_mat;
