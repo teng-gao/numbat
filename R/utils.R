@@ -341,7 +341,11 @@ get_bulk = function(count_mat, lambdas_ref, df_allele, gtf, genetic_map, min_dep
 
     # doesn't work with 0s in the ref
     # TODO: should just make gene NA so we don't miss SNPs in that gene
-    bulk = bulk %>% filter(lambda_ref != 0 | is.na(gene))
+    bulk = bulk %>% mutate(
+        gene = ifelse(lambda_ref == 0, NA, gene),
+        Y_obs = ifelse(lambda_ref == 0, NA, Y_obs),
+        lambda_ref = ifelse(lambda_ref == 0, NA, lambda_ref)
+    )
 
     bulk = bulk %>%
         mutate(CHROM = as.character(CHROM)) %>%
@@ -1393,7 +1397,7 @@ calc_phi_mle_lnpois = function (Y_obs, lambda_ref, d, mu, sig, lower = 0.1, uppe
 
 #' Laplace approximation of the posterior of allelic imbalance theta
 #' @keywords internal
-approx_theta_post = function(pAD, DP, p_s, lower = 0.001, upper = 0.499, start = 0.25, gamma = 20) {
+approx_theta_post = function(pAD, DP, p_s, upper = 0.499, start = 0.25, gamma = 20) {
 
     gamma = unique(gamma)
 
@@ -1407,21 +1411,21 @@ approx_theta_post = function(pAD, DP, p_s, lower = 0.001, upper = 0.499, start =
 
     fit = optim(
         start, 
-        function(theta) {-calc_allele_lik(pAD, DP, p_s, theta, gamma)},
+        function(theta) {-calc_allele_lik(pAD, DP, p_s, abs(theta), gamma)},
         method = 'L-BFGS-B',
-        lower = lower,
+        lower = -upper,
         upper = upper,
         hessian = TRUE
     )
     
-    mu = fit$par
+    mu = abs(fit$par)
     sigma = sqrt(as.numeric(1/(fit$hessian)))
 
     if (is.na(sigma)) {
         sigma = 0
     }
     
-    return(tibble('theta_mle' = mu, 'theta_sigma' = sigma))
+    return(tibble('theta_mle' = mu, 'theta_mle_sig' = sigma))
 }
 
 # naive HMM allelic imbalance MLE
@@ -1469,7 +1473,7 @@ approx_phi_post = function(Y_obs, lambda_ref, d, alpha = NULL, beta = NULL, mu =
         sd = 0
     }
 
-    return(tibble('phi_mle' = mean, 'phi_sigma' = sd))
+    return(tibble('phi_mle' = mean, 'phi_mle_sig' = sd))
 }
 
 #' Helper function to get the internal nodes of a dendrogram and the leafs in each subtree 
@@ -2095,229 +2099,220 @@ theta_hat_EM = function(pAD, DP, p_s, start = 0.08, gamma = 20) {
     return(theta)
 }
 
-test_branch = function(count_mat, df_allele, gtree, segs_consensus, from_node, to_node, ncores, ...) {
+analyze_allele = function(bulk, t = 1e-5, theta_min = 0.08, gamma = 20) {
     
-    segs_consensus = segs_consensus %>% mutate(CHROM = factor(CHROM))
+    bulk = bulk %>%
+        group_by(CHROM) %>%
+        mutate(
+            state = run_allele_hmm_1(pAD, DP, p_s, theta_min = theta_min, gamma = UQ(gamma)),
+            cnv_state = str_remove(state, '_up|_down')
+        ) %>%
+        mutate(
+            haplo_theta_min = case_when(
+                str_detect(state, 'up') ~ 'major',
+                str_detect(state, 'down') ~ 'minor',
+                TRUE ~ ifelse(pBAF > 0.5, 'major', 'minor')
+            ),
+            major_count = ifelse(haplo_theta_min == 'major', pAD, DP - pAD),
+            minor_count = DP - major_count
+        ) %>%
+        ungroup() %>%
+        annot_segs() %>%
+        mutate(seg_size = seg_end - seg_start)
     
-    gtree = gtree %>% activate(nodes)
+    segs_retest = bulk %>%
+        filter(cnv_state != 'neu') %>%
+        group_by(seg) %>%
+        summarise(
+            theta_hat = theta_hat_seg(sum(major_count), sum(minor_count)),
+            approx_theta_post(pAD, DP, p_s, gamma = UQ(gamma), start = unique(theta_hat)),
+            LLR = calc_allele_LLR(pAD, DP, p_s, theta_mle, gamma = UQ(gamma))
+        )
+
+    bulk = bulk %>% 
+        select(-any_of(c('LLR', 'theta_hat', 'theta_mle', 'theta_sigma'))) %>%
+        left_join(segs_retest, by = 'seg')
+
+    # get posterior haplotype counts
+    bulk = bulk %>% mutate(cnv_state_post = cnv_state) %>%
+        classify_alleles() 
     
-    # from root
-    if (is.na(from_node)) {
-        from_node = gtree %>% filter(root) %>% pull(name)
+    return(bulk)
+}
+
+approx_theta_map = function(pAD, DP, p_s, lower = 0.001, upper = 0.499, start = 0.25, gamma = 20, beta = 2000) {
+
+    gamma = unique(gamma)
+
+    if (length(gamma) > 1) {
+        stop('gamma has to be a single value')
     }
     
-    from_node = gtree %>% filter(name == from_node) %>% pull(id)
-    to_node = gtree %>% filter(name == to_node) %>% pull(id)
-    
-    cells_1 = get_desc(gtree, from_node)
-    cells_2 = get_desc(gtree, to_node)
+    if (length(pAD) <= 10) {
+        return(tibble('theta_map' = 0, 'theta_sigma' = 0))
+    }
 
-    cells_1 = cells_1[!cells_1 %in% cells_2]
-    
-    groups = list(
-        list(sample = '1', cells = cells_1, size = length(cells_1)), 
-        list(sample = '2', cells = cells_2, size = length(cells_2))
+    fit = optim(
+        start, 
+        function(theta) {-calc_allele_lik(pAD, DP, p_s, abs(theta), gamma) - dbeta(0.5 + theta, beta, beta, log = TRUE)},
+        method = 'L-BFGS-B',
+        lower = -upper,
+        upper = upper,
+        hessian = TRUE
     )
     
-    bulks = make_group_bulks(
-        groups = groups,
-        count_mat = count_mat,
-        df_allele = df_allele, 
-        lambdas_ref = lambdas_ref,
-        gtf = gtf,
-        genetic_map = genetic_map,
-        min_depth = min_depth,
-        ncores = ncores
-    ) %>%
-    annot_consensus(segs_consensus)
-        
-    bulks = lapply(
-        bulks %>% split(.$sample),
-        function(bulk) {
+    mu = abs(fit$par)
+    sigma = sqrt(as.numeric(1/(fit$hessian)))
 
-            fit = bulk %>%
-                filter(cnv_state == 'neu') %>%
-                filter(!is.na(Y_obs)) %>%
-                filter(logFC < 8 & logFC > -8) %>%
-                {fit_lnpois(.$Y_obs, .$lambda_ref, unique(.$d_obs))}
-
-            bulk %>% mutate(mu = fit@coef[1], sig = fit@coef[2])
-
-        }
-    ) %>% bind_rows()
+    if (is.na(sigma)) {
+        sigma = 0
+    }
     
-    return(bulks)
+    return(tibble('theta_map' = mu, 'theta_map_sig' = sigma))
 }
 
-compare_bulks = function(bulks, segs_consensus, t = 1e-5, gamma = 20, ncores = 1) {
-    
-    segs_consensus = segs_consensus %>% mutate(CHROM = factor(CHROM))
-    
-    bulks = bulks %>%
-        arrange(sample) %>%
-        mutate(sample = as.integer(factor(sample, unique(sample)))) %>%
-        select(-phi_mle) %>%
-        arrange(CHROM, POS) %>%
-        mutate(snp_index = as.integer(factor(snp_id, unique(snp_id)))) %>%
+find_diploid = function(
+    bulk, gamma = 20, theta_min = 0.08, t = 1e-5, debug = FALSE, verbose = TRUE) {
+
+    # define imbalanced regions
+    bulk = bulk %>% 
         group_by(CHROM) %>%
+        mutate(
+            state = run_allele_hmm_1(pAD, DP, p_s, theta_min = theta_min, gamma = UQ(gamma)),
+            cnv_state = str_remove(state, '_down|_up')
+        ) %>% 
         ungroup()
 
-    bulks_unified = bulks %>% select(sample, CHROM, POS, snp_id, snp_index, cM, pAD, DP, Y_obs, p_s, mu, sig, d_obs, lambda_ref) %>%
-        tidyr::pivot_wider(names_from = "sample", "values_from" = c("pAD", "DP", "Y_obs", "mu", "sig", "d_obs", "lambda_ref")) %>%
-        mutate(
-            inter_snp_cm = c(NA, cM[2:length(cM)] - cM[1:(length(cM)-1)]),
-            p_s = switch_prob_cm(inter_snp_cm)
-        )
-    
-    bulks_unified = bulks_unified %>% annot_consensus(segs_consensus)
-    
-    LLRs = mclapply(
-            mc.cores = ncores,
-            bulks_unified %>%
-                filter(cnv_state != 'neu') %>%
-                split(droplevels(.$seg)),
-            function(bulks) {
+    bulk = bulk %>% mutate(diploid = cnv_state == 'neu')
 
-                logphi_min = log(unique(bulks$phi_mle))
-                theta_min = unique(bulks$theta_mle)
-
-                hmm1 = bulks %>%
-                    {get_joint_hmm(
-                        pAD = .$pAD_1,
-                        DP = .$DP_1, 
-                        Y_obs = .$Y_obs_1, 
-                        d_total = na.omit(unique(.$d_obs_1)),
-                        p_s = .$p_s,
-                        lambda_ref = .$lambda_ref_1, 
-                        phi_amp = 2^(logphi_min),
-                        phi_del = 2^(-logphi_min),
-                        mu = .$mu_1,
-                        sig = .$sig_1,
-                        t = t,
-                        gamma = gamma,
-                        theta_min = theta_min
-                    )}
-
-                hmm2 = bulks %>%
-                    {get_joint_hmm(
-                        pAD = .$pAD_2,
-                        DP = .$DP_2, 
-                        Y_obs = .$Y_obs_2, 
-                        d_total = na.omit(unique(.$d_obs_2)),
-                        p_s = .$p_s,
-                        lambda_ref = .$lambda_ref_2, 
-                        phi_amp = 2^(logphi_min),
-                        phi_del = 2^(-logphi_min),
-                        mu = .$mu_2,
-                        sig = .$sig_2,
-                        t = t,
-                        gamma = gamma,
-                        theta_min = theta_min
-                    )}
-
-                LL = compare_hmm(hmm1, hmm2)
-
-                return(LL)
-
-            }
-        ) %>% unlist()
-    
-    return(LLRs)
-    
+    return(bulk)
 }
 
-# evaluate pseduobulks against one set of segmentations
-evaluate_segs = function(bulks, segs, t = 1e-5, ncores = 1) {
+#' Laplace approximation of the posterior of expression fold change phi
+#' @keywords internal
+approx_phi_map = function(Y_obs, lambda_ref, d, mu, sig, lower = 0.2, upper = 10, start = 1, eta = 100) {
+    
+    if (length(Y_obs) == 0) {
+        return(tibble('phi_mle' = 1, 'phi_sigma' = 0))
+    }
+    
+    start = max(min(1, upper), lower)
 
-    M = length(unique(bulks$sample))
+    f = function(phi) {-l_lnpois(Y_obs, lambda_ref, d, mu, sig, phi = phi) - dnorm(phi, 1, 1/eta, log = TRUE)}
 
-    bulks %>% 
-    annot_consensus(segs) %>%
-    split(droplevels(.$CHROM)) %>%
-    mclapply(
-        mc.cores = ncores,
-        function(bulks){
-            bulks %>%
-            group_by(CHROM, sample, seg) %>%
-            mutate(
-                approx_theta_post(
-                    pAD[!is.na(pAD)], DP[!is.na(pAD)], p_s[!is.na(pAD)], start = 0.25
-                ),
-                approx_phi_post(
-                    Y_obs[!is.na(Y_obs)], 
-                    lambda_ref[!is.na(Y_obs)],
-                    unique(na.omit(d_obs)),
-                    mu = mu[!is.na(Y_obs)],
-                    sig = sig[!is.na(Y_obs)]
-                )
-            ) %>%
-            ungroup() %>%
-            group_by(CHROM, sample) %>%
-            summarise(
-                l_x = l_lnpois(
-                    Y_obs[!is.na(Y_obs)], lambda_ref[!is.na(Y_obs)], unique(na.omit(d_obs)),
-                    mu[!is.na(Y_obs)], sig[!is.na(Y_obs)], phi = phi_mle[!is.na(Y_obs)]
-                ),
-                l_y = calc_allele_lik(pAD[!is.na(pAD)], DP[!is.na(pAD)], p_s[!is.na(pAD)], theta = theta_mle[!is.na(pAD)]),
-                n_x = sum(!is.na(Y_obs)),
-                n_y = sum(!is.na(pAD)),
-                bkp = length(unique(seg)) - 1,
-                l = l_x + l_y,
-                .groups = 'drop'
-            ) %>%
-            group_by(CHROM) %>%
-            summarise(
-                l = sum(l),
-                l_x = sum(l_x),
-                l_y = sum(l_y),
-                n_x = sum(n_x),
-                n_y = sum(n_y),
-                bkp = min(bkp),
-                l_adj = l + bkp * log(t),
-                .groups = 'drop'
-            )
-    }) %>%
-    bind_rows()
+    fit = optim(
+        start,
+        function(phi) {
+            f(phi)
+        },
+        method = 'L-BFGS-B',
+        lower = lower,
+        upper = upper,
+        hessian = TRUE
+    )
+
+    mean = fit$par
+    sd = sqrt(as.numeric(1/(fit$hessian)))
+
+    if (is.na(sd)) {
+        mean = 1
+        sd = 0
+    }
+
+    return(tibble('phi_map' = mean, 'phi_map_sig' = sd))
 }
 
-# get optimal segmentation from subtree and clone bulk results
-get_segs_optimal = function(bulk_subtrees, bulk_clones, t = 1e-5, min_LLR = 10, ncores = 1) {
+
+
+analyze_joint = function(
+    bulk, t = 1e-5, gamma = 20, beta = 2000, eta = 100, theta_min = 0.08, logphi_min = 0.25,
+    lambda = 1, min_genes = 10, verbose = TRUE
+) {
     
-    samples = unique(bulk_subtrees$sample)
+    # update transition probablity
+    bulk = bulk %>% mutate(p_s = switch_prob_cm(inter_snp_cm, lambda = UQ(lambda)))
 
-    segs_all = lapply(
-            samples,
-            function(sample) {
-                bulk_subtrees %>% 
-                filter(sample == UQ(sample)) %>%
-                get_segs_consensus(min_LLR = min_LLR) %>%
-                mutate(sample = UQ(sample))
-            }
-        )
+    bulk = find_diploid(bulk, gamma = gamma, t = t, theta_min = theta_min)
 
-    scores = lapply(
-            segs_all,
-            function(segs) {
-                bulk_clones %>% 
-                    evaluate_segs(segs, t = t, ncores = ncores) %>%
-                    mutate(sample = unique(segs$sample))
-            }
-        ) %>% bind_rows()
+    # fit expression baseline
+    fit = bulk %>%
+        filter(!is.na(Y_obs)) %>%
+        filter(logFC < 8 & logFC > -8) %>%
+        filter(diploid) %>%
+        {fit_lnpois_cpp(.$Y_obs, .$lambda_ref, unique(.$d_obs))}
+        
+    bulk = bulk %>% mutate(mu = fit[1], sig = fit[2])
 
-    segs_optimal = inner_join(
-            bind_rows(segs_all),
-            scores %>%
-                arrange(CHROM, -l_adj) %>%
-                distinct(CHROM, .keep_all = TRUE) %>%
-                select(CHROM, sample),
-            by = c('sample', 'CHROM')
-        ) %>%
-        arrange(CHROM) %>%
+
+    # run joint HMM
+    bulk = bulk %>% 
         group_by(CHROM) %>%
-        mutate(seg_cons = paste0(CHROM, letters_all[1:n()])) %>%
-        ungroup() %>%
-        mutate(seg = seg_cons)
+        mutate(state = 
+            run_joint_hmm(
+                pAD = pAD,
+                DP = DP, 
+                p_s = p_s,
+                Y_obs = Y_obs, 
+                lambda_ref = lambda_ref, 
+                d_total = na.omit(unique(d_obs)),
+                phi_amp = 2^(logphi_min),
+                phi_del = 2^(-logphi_min),
+                mu = mu,
+                sig = sig,
+                t = t,
+                gamma = UQ(gamma),
+                theta_min = theta_min
+            )
+        ) %>%
+        mutate(cnv_state = str_remove(state, '_down|_up')) %>%
+        annot_segs(var = 'cnv_state') %>%
+        smooth_segs(min_genes = min_genes) %>%
+        annot_segs(var = 'cnv_state') %>%
+        mutate(state = ifelse(cnv_state == 'neu', 'neu', state))
+
+    # annotate phi MLE
+    bulk = bulk %>%
+        group_by(seg) %>%
+        mutate(
+            approx_phi_post(
+                Y_obs[!is.na(Y_obs)], lambda_ref[!is.na(Y_obs)], unique(na.omit(d_obs)),
+                mu = mu[!is.na(Y_obs)],
+                sig = sig[!is.na(Y_obs)]
+            )
+        ) %>%
+        ungroup()
     
-    return(list(segs_optimal = segs_optimal, scores = scores))
-    
+    # annotate theta MLE
+    segs_retest = bulk %>%
+        filter(cnv_state != 'neu') %>%
+        group_by(seg) %>%
+        summarise(
+            approx_theta_post(pAD[!is.na(pAD)], DP[!is.na(pAD)], p_s[!is.na(pAD)], gamma = UQ(gamma), start = 0.1),
+            LLR_y = calc_allele_LLR(pAD[!is.na(pAD)], DP[!is.na(pAD)], p_s[!is.na(pAD)], theta_mle, gamma = UQ(gamma)),
+            LLR_x = calc_exp_LLR(
+                Y_obs[!is.na(Y_obs)], 
+                lambda_ref[!is.na(Y_obs)], 
+                unique(na.omit(d_obs)), 
+                unique(phi_mle), 
+                mu = mu[!is.na(Y_obs)], 
+                sig = sig[!is.na(Y_obs)]),
+            LLR = LLR_x + LLR_y
+        )
+
+    bulk = bulk %>% 
+        select(-any_of(c('LLR', 'theta_hat', 
+            'theta_mle', 'theta_mle_sig', 
+            'theta_map', 'theta_map_sig', 
+            'LLR_y', 'LLR_x'))) %>%
+        left_join(segs_retest, by = 'seg')
+
+    bulk = bulk %>% mutate(cnv_state_post = cnv_state, state_post = state)
+
+    bulk = bulk %>% classify_alleles()
+
+    # store these info here
+    bulk$lambda = lambda 
+    bulk$gamma = gamma
+
+    return(bulk)
 }

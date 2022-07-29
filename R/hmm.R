@@ -142,7 +142,7 @@ likelihood_allele = function(hmm) {
     return(LL)
 }
 
-#' allele-only HMM
+#' allele-only HMM, two theta levels
 #' @param pAD integer vector Paternal allele counts
 #' @param DP integer vector Total alelle counts
 #' @param p_s numeric vector Phase switch probabilities
@@ -208,6 +208,61 @@ run_allele_hmm = function(pAD, DP, p_s, t = 1e-5, theta_min = 0.08, gamma = 20, 
     return(mpc)
 }
 
+
+#' allele-only HMM, one theta level
+#' @param pAD integer vector Paternal allele counts
+#' @param DP integer vector Total alelle counts
+#' @param p_s numeric vector Phase switch probabilities
+#' @param t numeric Transition probability between copy number states
+#' @param theta_min numeric Minimum haplotype frequency deviation threshold
+#' @param gamma numeric Overdispersion in the allele-specific expression
+#' @return character vector Decoded states
+#' @keywords internal
+run_allele_hmm_1 = function(pAD, DP, p_s, t = 1e-5, theta_min = 0.08, gamma = 20) {
+
+    gamma = unique(gamma)
+
+    # states
+    states = c("neu", "theta_up", "theta_down")
+
+    N = length(pAD)
+    M = length(states)
+
+    # transition matrices
+    calc_trans_mat = function(p_s, t) {
+        matrix(
+            c(1-t, t/2, t/2, 
+             t, (1-t)*(1-p_s), (1-t)*p_s, 
+             t, (1-t)*p_s, (1-t)*(1-p_s)),
+            ncol = 3,
+            byrow = TRUE
+        )
+    }
+
+    Pi = sapply(p_s, function(p_s) {calc_trans_mat(p_s, t)}) %>% 
+        array(dim = c(M, M, N))
+
+    alphas = gamma * c(0.5, 0.5 + theta_min, 0.5 - theta_min)
+    betas = gamma * c(0.5, 0.5 - theta_min, 0.5 + theta_min)
+            
+    hmm = list(
+        x = pAD, 
+        logPi = log(Pi), 
+        delta = c(1-t, t/2, t/2), 
+        alpha = matrix(rep(alphas, N), ncol = M, byrow = TRUE),
+        beta = matrix(rep(betas, N), ncol = M, byrow = TRUE),
+        d = DP,
+        N = N,
+        M = M,
+        states = states
+    )
+    
+    mpc = states[viterbi_allele(hmm)]
+    
+    return(mpc)
+}
+
+
 #' Calculate allele likelihoods
 #' @param pAD integer vector Paternal allele counts
 #' @param DP integer vector Total alelle counts
@@ -244,96 +299,44 @@ calc_allele_lik = function (pAD, DP, p_s, theta, gamma = 20) {
 #' @param allele_only logical Whether to only use allele data
 #' @keywords internal
 run_joint_hmm = function(
-    pAD, DP, p_s, Y_obs = 0, lambda_ref = 0, d_total = 0, theta_min = 0.08, theta_neu = 0,
-    bal_cnv = TRUE, phi_del = 2^(-0.25), phi_amp = 2^(0.25), phi_bamp = phi_amp, phi_bdel = phi_del, 
-    alpha = 1, beta = 1, 
-    mu = 0, sig = 1,
-    t = 1e-5, gamma = 18,
-    prior = NULL, exp_only = FALSE, allele_only = FALSE,
-    classify_allele = FALSE, phasing = TRUE, debug = FALSE
+    pAD, DP, p_s, Y_obs, lambda_ref, d_total, 
+    theta_min = 0.08, phi_del = 2^(-0.25), phi_amp = 2^(0.25), 
+    t = 1e-5, mu = 0, sig = 1, gamma = 20,
+    debug = FALSE
 ) {
 
     # states
-    states = c(
-        "1" = "neu", "2" = "del_1_up", "3" = "del_1_down", "4" = "del_2_up", "5" = "del_2_down",
-        "6" = "loh_1_up", "7" = "loh_1_down", "8" = "loh_2_up", "9" = "loh_2_down", 
-        "10" = "amp_1_up", "11" = "amp_1_down", "12" = "amp_2_up", "13" = "amp_2_down", 
-        "14" = "bamp", "15" = "bdel"
-    )
+    states = c("1" = "neu", 
+        "2" = "del_up", "3" = "del_down",
+        "4" = "loh_up", "5" = "loh_down", 
+        "6" = "amp_up", "7" = "amp_down")
 
     states_cn = str_remove(states, '_up|_down')
     states_phase = str_extract(states, 'up|down')
 
     # relative abundance of states
-    w = c('neu' = 1, 'del_1' = 1, 'del_2' = 1e-10, 'loh_1' = 1, 'loh_2' = 1e-10, 'amp_1' = 1, 'amp_2' = 1e-10, 'bamp' = 1e-4, 'bdel' = 1e-10)
+    w = c('neu' = 1, 'del' = 1, 'amp' = 1, 'loh' = 1)
         
-    # intitial probabilities
-    if (is.null(prior)) {
-        # encourage CNV from telomeres
-        prior = sapply(1:length(states), function(to){
-                get_trans_probs(
-                    t = min(t * 100, 1), p_s = 0, w,
-                    cn_from = 'neu', phase_from = NA,
-                    cn_to = states_cn[to], phase_to = states_phase[to])
-            })
-    }
+    prior = sapply(1:length(states), function(to){
+            get_trans_probs(
+                t = t, p_s = 0, w,
+                cn_from = 'neu', phase_from = NA,
+                cn_to = states_cn[to], phase_to = states_phase[to])
+        })
 
-    # to do: renormalize the probabilities after deleting states
     states_index = 1:length(states)
-
-    if (!bal_cnv) {
-        states_index = 1:13
-    }
-        
-    if (exp_only) {
-        pAD = rep(NA, length(pAD))
-        p_s = rep(0, length(p_s))
-    }
-    
-    if (allele_only) {
-        states_index = c(1, 6:9)
-
-        Y_obs = rep(NA, length(Y_obs))
-    }
-
-    if (!phasing) {
-        states_index = c(1, 6)
-        
-        p_s = ifelse(is.na(pAD), p_s, 0)
-        pAD = ifelse(pAD > (DP - pAD), pAD, DP - pAD)
-        theta_neu = 0.1
-        theta_min = 0.45
-    }
-
-    if (classify_allele) {
-        states_index = c(6,7)
-    }
     
     # transition matrices
     As = calc_trans_mat(t, p_s, w, states_cn, states_phase)
 
-    theta_u_1 = 0.5 + theta_min
-    theta_d_1 = 0.5 - theta_min
-
-    theta_u_2 = 0.9
-    theta_d_2 = 0.1
-
-    theta_u_neu = 0.5 + theta_neu
-    theta_d_neu = 0.5 - theta_neu
+    theta_u = 0.5 + theta_min
+    theta_d = 0.5 - theta_min
 
     # parameters for each state
-    alpha_states = gamma * c(theta_u_neu, rep(c(theta_u_1, theta_d_1, theta_u_2, theta_d_2), 3), theta_u_neu, theta_u_neu)
-    beta_states = gamma * c(theta_d_neu, rep(c(theta_d_1, theta_u_1, theta_d_2, theta_u_2), 3), theta_d_neu, theta_d_neu)
-    phi_states = c(1, rep(phi_del, 2), rep(0.5, 2), rep(1, 4), rep(phi_amp, 2), rep(2.5, 2), phi_bamp, phi_bdel)
-    
-    # subset for relevant states
-    prior = prior[states_index]
-    As = As[states_index, states_index,]
-    alpha_states = alpha_states[states_index]
-    beta_states = beta_states[states_index]
-    phi_states = phi_states[states_index]
-    states = states[states_index] %>% setNames(1:length(.))
-                
+    alpha_states = gamma * c(0.5, rep(c(theta_u, theta_d), 3))
+    beta_states = gamma * c(0.5, rep(c(theta_d, theta_u), 3))
+    phi_states = c(1, rep(phi_del, 2), rep(1, 2), rep(phi_amp, 2))
+                    
     N = length(Y_obs)
 
     if (length(mu) == 1) {
