@@ -2198,7 +2198,7 @@ approx_phi_map = function(Y_obs, lambda_ref, d, mu, sig, lower = 0.2, upper = 10
     
     start = max(min(1, upper), lower)
 
-    f = function(phi) {-l_lnpois(Y_obs, lambda_ref, d, mu, sig, phi = phi) - dnorm(phi, 1, 1/eta, log = TRUE)}
+    f = function(phi) {-l_lnpois(Y_obs, lambda_ref, d, mu, sig, phi = phi) - dnorm(log(phi), 0, 1/eta, log = TRUE)}
 
     fit = optim(
         start,
