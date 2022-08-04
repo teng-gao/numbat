@@ -57,8 +57,8 @@ cnv_labels = names(cnv_colors) %>%
 #' @export
 plot_psbulk = function(
         bulk, use_pos = TRUE, allele_only = FALSE, min_LLR = 5, min_depth = 8, exp_limit = 2, 
-        phi_mle = TRUE, theta_roll = FALSE, dot_size = 0.8, dot_alpha = 0.5, legend = FALSE, 
-        exclude_gap = TRUE
+        phi_mle = TRUE, theta_mle = FALSE, dot_size = 0.8, dot_alpha = 0.5, line_size = 0.5,
+        legend = FALSE, exclude_gap = TRUE
     ) {
 
     if (!all(c('state_post', 'cnv_state_post') %in% colnames(bulk))) {
@@ -182,7 +182,7 @@ plot_psbulk = function(
 
     if (phi_mle & (!allele_only)) {
         segs = bulk %>% 
-            distinct(CHROM, seg, seg_start, seg_start_index, seg_end, seg_end_index, phi_mle) %>%
+            distinct(CHROM, seg, seg_start, seg_start_index, seg_end, seg_end_index, phi_mle, theta_mle) %>%
             mutate(variable = 'logFC') %>%
             filter(log2(phi_mle) < exp_limit)
 
@@ -194,14 +194,16 @@ plot_psbulk = function(
             end = 'seg_end_index'
         }
 
-        p = p + geom_segment(
-            inherit.aes = FALSE,
-            data = segs,
-            aes(x = get(start), xend = get(end), y = log2(phi_mle), yend = log2(phi_mle)),
-            color = 'darkred',
-            size = 0.5
-        ) +
-        geom_hline(data = data.frame(variable = 'logFC'), aes(yintercept = 0), color = 'gray30', linetype = 'dashed')
+        p = p + 
+            geom_segment(
+                inherit.aes = FALSE,
+                data = segs,
+                aes(x = get(start), xend = get(end), y = log2(phi_mle), yend = log2(phi_mle)),
+                color = 'darkred',
+                size = line_size
+            ) +
+            geom_hline(data = data.frame(variable = 'logFC'), aes(yintercept = 0), color = 'gray30', linetype = 'dashed')
+
     } else if (!allele_only) {
         p = p + geom_line(
             inherit.aes = FALSE,
@@ -213,21 +215,21 @@ plot_psbulk = function(
         geom_hline(data = data.frame(variable = 'logFC'), aes(yintercept = 0), color = 'gray30', linetype = 'dashed')
     }
 
-    if (theta_roll) {
-        p = p + 
-            geom_line(
+    if (theta_mle) {
+        p = p +
+            geom_segment(
                 inherit.aes = FALSE,
-                data = D %>% mutate(variable = 'pHF'),
-                aes(x = snp_index, y = 0.5 - theta_hat_roll, color = paste0(cnv_state_post, '_down')),
-                # color = 'black',
-                size = 0.35
+                data = segs %>% mutate(variable = 'pHF'),
+                aes(x = get(start), xend = get(end), y = 0.5 + theta_mle, yend = 0.5 + theta_mle),
+                color = 'darkred',
+                size = line_size
             ) +
-            geom_line(
+            geom_segment(
                 inherit.aes = FALSE,
-                data = D %>% mutate(variable = 'pHF'),
-                aes(x = snp_index, y = 0.5 + theta_hat_roll, color = paste0(cnv_state_post, '_up')),
-                # color = 'gray',
-                size = 0.35
+                data = segs %>% mutate(variable = 'pHF'),
+                aes(x = get(start), xend = get(end), y = 0.5 - theta_mle, yend = 0.5 - theta_mle),
+                color = 'darkred',
+                size = line_size
             )
     } 
 
