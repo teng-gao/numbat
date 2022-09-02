@@ -57,7 +57,7 @@ cnv_labels = names(cnv_colors) %>%
 #' @export
 plot_psbulk = function(
         bulk, use_pos = TRUE, allele_only = FALSE, min_LLR = 5, min_depth = 8, exp_limit = 2, 
-        phi_mle = TRUE, theta_mle = FALSE, dot_size = 0.8, dot_alpha = 0.5, line_size = 0.5,
+        phi_mle = TRUE, theta_mle = FALSE, theta_roll = FALSE, dot_size = 0.8, dot_alpha = 0.5, line_size = 0.5,
         legend = FALSE, exclude_gap = TRUE
     ) {
 
@@ -210,7 +210,7 @@ plot_psbulk = function(
             data = bulk %>% mutate(variable = 'logFC') %>% filter(log2(phi_mle_roll) < exp_limit),
             aes(x = get(marker), y = log2(phi_mle_roll), group = '1'),
             color = 'darkred',
-            size = 0.35
+            size = line_size
         ) +
         geom_hline(data = data.frame(variable = 'logFC'), aes(yintercept = 0), color = 'gray30', linetype = 'dashed')
     }
@@ -232,6 +232,17 @@ plot_psbulk = function(
                 size = line_size
             )
     } 
+
+    if (theta_roll) {
+        p = p +
+            geom_line(
+                data = bulk %>% mutate(variable = 'pHF'),
+                inherit.aes = FALSE,
+                aes(x = get(marker), y = theta_hat_roll),
+                color = 'darkred',
+                size = line_size
+            )
+    }
 
     p = p + xlab(marker_label)
     

@@ -647,10 +647,12 @@ analyze_bulk = function(
 #' @param allele_only whether to retest only using allele data
 #' @return a dataframe of segments with CNV posterior information
 #' @keywords internal
-retest_cnv = function(bulk, theta_min = 0.08, logphi_min = 0.25, gamma = 20, allele_only = FALSE, exclude_neu = TRUE) {
+retest_cnv = function(bulk, theta_min = 0.08, logphi_min = 0.25, gamma = 20, r = 0.015, allele_only = FALSE, exclude_neu = TRUE) {
 
     # rolling theta estimates
     bulk = annot_theta_roll(bulk)
+
+    bulk = bulk %>% mutate(R = ifelse(pBAF == AR, -1, 1))
 
     if (exclude_neu) {
         bulk = bulk %>% filter(cnv_state != 'neu')
@@ -667,10 +669,10 @@ retest_cnv = function(bulk, theta_min = 0.08, logphi_min = 0.25, gamma = 20, all
                 seg_start = min(POS),
                 seg_end = max(POS),
                 theta_hat = theta_hat_seg(major_count[!is.na(major_count)], minor_count[!is.na(minor_count)]),
-                approx_theta_post(pAD[!is.na(pAD)], DP[!is.na(pAD)], p_s[!is.na(pAD)], gamma = unique(gamma), start = theta_hat),
+                approx_theta_post(pAD[!is.na(pAD)], DP[!is.na(pAD)], R[!is.na(pAD)], p_s[!is.na(pAD)], gamma = unique(gamma), r = r, start = theta_hat),
                 p_loh = 1, p_amp = 0, p_del = 0, p_bamp = 0, p_bdel = 0,
                 LLR_x = 0,
-                LLR_y = calc_allele_LLR(pAD[!is.na(pAD)], DP[!is.na(pAD)], p_s[!is.na(pAD)], theta_mle, gamma = unique(gamma)),
+                LLR_y = calc_allele_LLR(pAD[!is.na(pAD)], DP[!is.na(pAD)], R[!is.na(pAD)], p_s[!is.na(pAD)], theta_mle, gamma = unique(gamma), r = r),
                 LLR = LLR_x + LLR_y,
                 phi_mle = 1,
                 phi_sigma = 0,
@@ -686,7 +688,7 @@ retest_cnv = function(bulk, theta_min = 0.08, logphi_min = 0.25, gamma = 20, all
                 n_genes = length(na.omit(unique(gene))),
                 n_snps = sum(!is.na(pAD)),
                 theta_hat = theta_hat_seg(major_count[!is.na(major_count)], minor_count[!is.na(minor_count)]),
-                approx_theta_post(pAD[!is.na(pAD)], DP[!is.na(pAD)], p_s[!is.na(pAD)], gamma = unique(gamma), start = theta_hat),
+                approx_theta_post(pAD[!is.na(pAD)], DP[!is.na(pAD)], R[!is.na(pAD)], p_s[!is.na(pAD)], gamma = unique(gamma), r = r, start = theta_hat),
                 L_y_n = pnorm.range.log(0, theta_min, theta_mle, theta_sigma),
                 L_y_d = pnorm.range.log(theta_min, 0.499, theta_mle, theta_sigma),
                 L_y_a = pnorm.range.log(theta_min, 0.375, theta_mle, theta_sigma),
@@ -725,7 +727,7 @@ retest_cnv = function(bulk, theta_min = 0.08, logphi_min = 0.25, gamma = 20, all
                     mu = mu[!is.na(Y_obs)],
                     sig = sig[!is.na(Y_obs)]
                 ),
-                LLR_y = calc_allele_LLR(pAD[!is.na(pAD)], DP[!is.na(pAD)], p_s[!is.na(pAD)], theta_mle, gamma = unique(gamma)),
+                LLR_y = calc_allele_LLR(pAD[!is.na(pAD)], DP[!is.na(pAD)], R[!is.na(pAD)], p_s[!is.na(pAD)], theta_mle, gamma = unique(gamma), r = r),
                 LLR = LLR_x + LLR_y,
                 LLR = logBF,
                 .groups = 'drop'
@@ -763,9 +765,10 @@ classify_alleles = function(bulk) {
     }
     
     allele_post = allele_bulk %>%
+        mutate(R = ifelse(pBAF == AR, -1, 1)) %>%
         group_by(CHROM, seg) %>%
         mutate(
-            p_up = forward_back_allele(get_allele_hmm(pAD, DP, p_s, theta = unique(theta_mle), gamma = 20))[,1],
+            p_up = forward_back_allele(get_allele_hmm(pAD, DP, R, p_s, theta = unique(theta_mle), gamma = 20))[,1],
             haplo_post = case_when(
                 p_up >= 0.5 & GT == '1|0' ~ 'major',
                 p_up >= 0.5 & GT == '0|1' ~ 'minor',
@@ -813,6 +816,26 @@ annot_theta_roll = function(bulk) {
                 group_by(CHROM) %>%
                 filter(!is.na(pAD)) %>%
                 mutate(theta_hat_roll = theta_hat_roll(major_count, minor_count, h = 100)) %>%
+                select(theta_hat_roll, CHROM, snp_id),
+            by = c('CHROM', 'snp_id')
+        ) %>%
+        group_by(CHROM) %>%
+        mutate(theta_hat_roll = zoo::na.locf(theta_hat_roll, na.rm=FALSE)) %>%
+        ungroup()
+
+    return(bulk)
+}
+
+annot_theta_roll2 = function(bulk, h = 100) {
+
+    # if no viterbi, use rolling average
+    bulk = bulk %>%
+        select(-any_of('theta_hat_roll')) %>%
+        left_join(
+            bulk %>%
+                group_by(CHROM) %>%
+                filter(!is.na(pAD) & DP >= 10) %>%
+                mutate(theta_hat_roll = theta_hat_roll(pAD, AD-pAD, h = h)) %>%
                 select(theta_hat_roll, CHROM, snp_id),
             by = c('CHROM', 'snp_id')
         ) %>%
@@ -1288,11 +1311,11 @@ fit_bbinom = function(AD, DP) {
 #' @param DP numeric vector Total allele depth
 #' @return a fit
 #' @keywords internal
-fit_gamma = function(AD, DP, start = 20) {
+fit_gamma = function(AD, DP, r = 0.015, start = 20) {
 
     fit = stats4::mle(
         minuslogl = function(gamma) {
-            -l_bbinom(AD, DP, gamma/2, gamma/2)
+            -l_bbinom(AD, DP, gamma * (0.5 - r), gamma * (0.5 + r))
         },
         start = start,
         lower = 0.0001
@@ -1302,6 +1325,29 @@ fit_gamma = function(AD, DP, start = 20) {
 
     return(gamma)
 }
+
+#' fit gamma maximum likelihood
+#' @param AD numeric vector Variant allele depth
+#' @param DP numeric vector Total allele depth
+#' @return a fit
+#' @keywords internal
+fit_gamma2 = function(AD, DP, start = 20) {
+
+    fit = optim(
+        c(start, 0.015), 
+        function(param) {
+            gamma = param[1]
+            r = param[2]
+            -l_bbinom(AD, DP, gamma * (0.5 - r), gamma * (0.5 + r))
+        },
+        method = 'L-BFGS-B',
+        lower = c(0.0001, 0),
+        upper = c(Inf, 0.499)
+    )
+
+    return(fit)
+}
+
 
 #' calculate joint likelihood of a gamma-poisson model
 #' @param Y_obs numeric vector Gene expression counts
@@ -1397,7 +1443,7 @@ calc_phi_mle_lnpois = function (Y_obs, lambda_ref, d, mu, sig, lower = 0.1, uppe
 
 #' Laplace approximation of the posterior of allelic imbalance theta
 #' @keywords internal
-approx_theta_post = function(pAD, DP, p_s, upper = 0.499, start = 0.25, gamma = 20) {
+approx_theta_post = function(pAD, DP, R, p_s, upper = 0.499, start = 0.25, gamma = 20, r = 0.015) {
 
     gamma = unique(gamma)
 
@@ -1411,7 +1457,7 @@ approx_theta_post = function(pAD, DP, p_s, upper = 0.499, start = 0.25, gamma = 
 
     fit = optim(
         start, 
-        function(theta) {-calc_allele_lik(pAD, DP, p_s, abs(theta), gamma)},
+        function(theta) {-calc_allele_lik(pAD, DP, R, p_s, abs(theta), gamma = gamma, r = r)},
         method = 'L-BFGS-B',
         lower = -upper,
         upper = upper,
@@ -1426,6 +1472,35 @@ approx_theta_post = function(pAD, DP, p_s, upper = 0.499, start = 0.25, gamma = 
     }
     
     return(tibble('theta_mle' = mu, 'theta_mle_sig' = sigma))
+}
+
+
+#' Laplace approximation of the posterior of allelic imbalance theta
+#' @keywords internal
+approx_theta_post_1 = function(pAD, DP, R, p_s, t, upper = 0.45, start = 0.08, gamma = 20, r = 0.015) {
+
+    gamma = unique(gamma)
+
+    if (length(gamma) > 1) {
+        stop('gamma has to be a single value')
+    }
+    
+    if (length(pAD) <= 10) {
+        return(tibble('theta_mle' = 0, 'theta_sigma' = 0))
+    }
+
+    fit = optim(
+        start, 
+        function(theta) {-calc_allele_lik_1(pAD, DP, R, p_s, t, abs(theta), gamma = gamma, r = r)},
+        method = 'L-BFGS-B',
+        lower = -upper,
+        upper = upper,
+        hessian = FALSE
+    )
+    
+    mu = abs(fit$par)
+    
+    return(tibble('theta_min' = mu))
 }
 
 # naive HMM allelic imbalance MLE
@@ -1585,12 +1660,13 @@ calc_cluster_dist = function(count_mat, cell_annot) {
 #' @param gamma numeric Dispersion parameter for the Beta-Binomial allele model
 #' @return numeric Log-likelihood ratio
 #' @keywords internal
-calc_allele_LLR = function(pAD, DP, p_s, theta_mle, theta_0 = 0, gamma = 20) {
+calc_allele_LLR = function(pAD, DP, R, p_s, theta_mle, theta_0 = 0, gamma = 20, r = 0.015) {
     if (length(pAD) <= 1) {
         return(0)
     }
-    l_1 = calc_allele_lik(pAD, DP, p_s, theta = theta_mle, gamma = gamma) 
-    l_0 = l_bbinom(pAD, DP, gamma*0.5, gamma*0.5)
+    l_1 = calc_allele_lik(pAD, DP, R, p_s, theta = theta_mle, gamma = gamma, r = r) 
+    AD = ifelse(R == -1, pAD, DP-pAD)
+    l_0 = l_bbinom(AD, DP, gamma * (0.5 - r), gamma * (0.5 + r))
     return(l_1 - l_0)
 }
 
@@ -1842,13 +1918,13 @@ fit_switch_prob = function(y, d) {
     return(fit@coef)
 }
 
-switch_prob_mle = function(pAD, DP, d, theta, gamma = 20) {
+switch_prob_mle = function(pAD, DP, d, theta, gamma = 20, r = 0.015) {
 
     fit = optim(
             par = 1, 
             function(lambda) {
                 p_s = switch_prob_cm(d, lambda)
-                -calc_allele_lik(pAD, DP, p_s, theta, gamma)
+                -calc_allele_lik(pAD, DP, p_s, theta, gamma = gamma, r = r)
             },
             method = 'L-BFGS-B',
             lower = 0,
@@ -1859,7 +1935,7 @@ switch_prob_mle = function(pAD, DP, d, theta, gamma = 20) {
     
 }
 
-switch_prob_mle2 = function(pAD, DP, d, gamma = 20) {
+switch_prob_mle2 = function(pAD, DP, d, gamma = 20, r = 0.015) {
 
     fit = optim(
             par = c(1, 0.4), 
@@ -1867,7 +1943,7 @@ switch_prob_mle2 = function(pAD, DP, d, gamma = 20) {
                 lambda = params[1]
                 theta = params[2]
                 p_s = switch_prob_cm(d, lambda)
-                -calc_allele_lik(pAD, DP, p_s, theta, gamma)
+                -calc_allele_lik(pAD, DP, p_s, theta, gamma = gamma, r = r)
             },
             method = 'L-BFGS-B',
             lower = c(0,0),
@@ -2078,33 +2154,17 @@ evaluate_calls = function(cnvs_dna, cnvs_call, gaps = gaps_hg38) {
 
 ########################### Experimental ############################
 
-# this is actually slower and doesn't give same answer as optim
-theta_hat_EM = function(pAD, DP, p_s, start = 0.08, gamma = 20) {
-    
-    theta = start
-    
-    converge = FALSE
-    
-    while (!converge) {
-        
-        hmm = get_allele_hmm(pAD, DP, p_s, theta, gamma = gamma)
-        theta_new = sum(forward_back_allele(hmm)[,1] * hmm$x + forward_back_allele(hmm)[,2] * (hmm$d - hmm$x))/sum(hmm$d) - 0.5
+analyze_allele = function(bulk, t = 1e-5, theta_min = 0.08, gamma = 20, lambda = 1, r = 0.015) {
 
-        converge = (theta_new - theta) < 1e-10
-
-        theta = theta_new
-
-    }
-    
-    return(theta)
-}
-
-analyze_allele = function(bulk, t = 1e-5, theta_min = 0.08, gamma = 20) {
+    # update transition probablity
+    bulk = bulk %>% 
+        mutate(p_s = switch_prob_cm(inter_snp_cm, lambda = UQ(lambda))) %>%
+        mutate(R = ifelse(pBAF == AR, -1, 1))
     
     bulk = bulk %>%
         group_by(CHROM) %>%
         mutate(
-            state = run_allele_hmm_1(pAD, DP, p_s, theta_min = theta_min, gamma = UQ(gamma)),
+            state = run_allele_hmm_1(pAD, DP, R, p_s, theta_min = theta_min, gamma = UQ(gamma)),
             cnv_state = str_remove(state, '_up|_down')
         ) %>%
         mutate(
@@ -2125,8 +2185,8 @@ analyze_allele = function(bulk, t = 1e-5, theta_min = 0.08, gamma = 20) {
         group_by(seg) %>%
         summarise(
             theta_hat = theta_hat_seg(sum(major_count), sum(minor_count)),
-            approx_theta_post(pAD, DP, p_s, gamma = UQ(gamma), start = unique(theta_hat)),
-            LLR = calc_allele_LLR(pAD, DP, p_s, theta_mle, gamma = UQ(gamma))
+            approx_theta_post(pAD, DP, R, p_s, gamma = UQ(gamma), start = unique(theta_hat)),
+            LLR = calc_allele_LLR(pAD, DP, R, p_s, theta_mle, gamma = UQ(gamma), r = r)
         )
 
     bulk = bulk %>% 
@@ -2140,7 +2200,7 @@ analyze_allele = function(bulk, t = 1e-5, theta_min = 0.08, gamma = 20) {
     return(bulk)
 }
 
-approx_theta_map = function(pAD, DP, p_s, lower = 0.001, upper = 0.499, start = 0.25, gamma = 20, beta = 2000) {
+approx_theta_map = function(pAD, DP, R, p_s, lower = 0.001, upper = 0.499, start = 0.25, gamma = 20, beta = 2000, r = 0.015) {
 
     gamma = unique(gamma)
 
@@ -2154,7 +2214,7 @@ approx_theta_map = function(pAD, DP, p_s, lower = 0.001, upper = 0.499, start = 
 
     fit = optim(
         start, 
-        function(theta) {-calc_allele_lik(pAD, DP, p_s, abs(theta), gamma) - dbeta(0.5 + theta, beta, beta, log = TRUE)},
+        function(theta) {-calc_allele_lik(pAD, DP, R, p_s, abs(theta), gamma = gamma, r = r) - dbeta(0.5 + theta, beta, beta, log = TRUE)},
         method = 'L-BFGS-B',
         lower = -upper,
         upper = upper,
@@ -2172,13 +2232,13 @@ approx_theta_map = function(pAD, DP, p_s, lower = 0.001, upper = 0.499, start = 
 }
 
 find_diploid = function(
-    bulk, gamma = 20, theta_min = 0.08, t = 1e-5, debug = FALSE, verbose = TRUE) {
+    bulk, gamma = 20, r = 0.015, theta_min = 0.08, t = 1e-5, debug = FALSE, verbose = TRUE) {
 
     # define imbalanced regions
     bulk = bulk %>% 
         group_by(CHROM) %>%
         mutate(
-            state = run_allele_hmm_1(pAD, DP, p_s, theta_min = theta_min, gamma = UQ(gamma)),
+            state = run_allele_hmm_1(pAD, DP, R, p_s, theta_min = theta_min, gamma = UQ(gamma), r = r),
             cnv_state = str_remove(state, '_down|_up')
         ) %>% 
         ungroup()
@@ -2222,17 +2282,18 @@ approx_phi_map = function(Y_obs, lambda_ref, d, mu, sig, lower = 0.2, upper = 10
     return(tibble('phi_map' = mean, 'phi_map_sig' = sd))
 }
 
-
-
 analyze_joint = function(
     bulk, t = 1e-5, gamma = 20, beta = 2000, eta = 100, theta_min = 0.08, logphi_min = 0.25,
-    lambda = 1, min_genes = 10, verbose = TRUE
+    lambda = 1, min_genes = 10, r = 0.015, exclude_neu = TRUE, fit_gamma = TRUE, fit_theta = TRUE, verbose = TRUE
 ) {
     
     # update transition probablity
-    bulk = bulk %>% mutate(p_s = switch_prob_cm(inter_snp_cm, lambda = UQ(lambda)))
+    bulk = bulk %>% 
+        filter(DP > 0) %>%
+        mutate(p_s = switch_prob_cm(inter_snp_cm, lambda = UQ(lambda))) %>%
+        mutate(R = ifelse(pBAF == AR, -1, 1))
 
-    bulk = find_diploid(bulk, gamma = gamma, t = t, theta_min = theta_min)
+    bulk = find_diploid(bulk, gamma = gamma, t = t, theta_min = theta_min, r = r)
 
     # fit expression baseline
     fit = bulk %>%
@@ -2243,7 +2304,34 @@ analyze_joint = function(
         
     bulk = bulk %>% mutate(mu = fit[1], sig = fit[2])
 
+    if (verbose) {
+        message(glue('Fitted sigma: {fit[2]}'))
+    }
 
+    # fit allele overdispersion
+    if (fit_gamma) {
+        gamma = bulk %>% 
+            filter(diploid) %>%
+            filter(!is.na(AD)) %>%
+            {fit_gamma(.$AD, .$DP, r = r)}
+
+        if (verbose) {
+            message(glue('Fitted gamma: {gamma}'))
+        }
+    }
+
+    if (fit_theta) {
+        if (verbose) {message('Fitting theta_min ..')}
+        bulk = bulk %>%
+            group_by(CHROM) %>%
+            mutate(
+                approx_theta_post_1(pAD[!is.na(pAD)], DP[!is.na(pAD)], R[!is.na(pAD)], p_s[!is.na(pAD)], t = t, gamma = gamma, r = r)
+            ) %>%
+            ungroup()
+    } else {
+        bulk$theta_min = theta_min
+    }
+    
     # run joint HMM
     bulk = bulk %>% 
         group_by(CHROM) %>%
@@ -2251,6 +2339,7 @@ analyze_joint = function(
             run_joint_hmm(
                 pAD = pAD,
                 DP = DP, 
+                R = R,
                 p_s = p_s,
                 Y_obs = Y_obs, 
                 lambda_ref = lambda_ref, 
@@ -2261,7 +2350,8 @@ analyze_joint = function(
                 sig = sig,
                 t = t,
                 gamma = UQ(gamma),
-                theta_min = theta_min
+                theta_min = unique(theta_min),
+                r = r
             )
         ) %>%
         mutate(cnv_state = str_remove(state, '_down|_up')) %>%
@@ -2284,11 +2374,11 @@ analyze_joint = function(
     
     # annotate theta MLE
     segs_retest = bulk %>%
-        filter(cnv_state != 'neu') %>%
+        filter((cnv_state != 'neu') | (!exclude_neu)) %>%
         group_by(seg) %>%
         summarise(
-            approx_theta_post(pAD[!is.na(pAD)], DP[!is.na(pAD)], p_s[!is.na(pAD)], gamma = UQ(gamma), start = 0.1),
-            LLR_y = calc_allele_LLR(pAD[!is.na(pAD)], DP[!is.na(pAD)], p_s[!is.na(pAD)], theta_mle, gamma = UQ(gamma)),
+            approx_theta_post(pAD[!is.na(pAD)], DP[!is.na(pAD)], R[!is.na(pAD)], p_s[!is.na(pAD)], gamma = UQ(gamma), r = r, start = 0.1),
+            LLR_y = calc_allele_LLR(pAD[!is.na(pAD)], DP[!is.na(pAD)], R[!is.na(pAD)], p_s[!is.na(pAD)], theta_mle, gamma = UQ(gamma), r = r),
             LLR_x = calc_exp_LLR(
                 Y_obs[!is.na(Y_obs)], 
                 lambda_ref[!is.na(Y_obs)], 
