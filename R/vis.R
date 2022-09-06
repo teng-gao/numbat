@@ -202,7 +202,8 @@ plot_psbulk = function(
                 color = 'darkred',
                 size = line_size
             ) +
-            geom_hline(data = data.frame(variable = 'logFC'), aes(yintercept = 0), color = 'gray30', linetype = 'dashed')
+            geom_hline(data = data.frame(variable = 'logFC'), aes(yintercept = 0), color = 'gray30', linetype = 'dashed') +
+            geom_hline(data = data.frame(variable = 'pHF'), aes(yintercept = 0.5), color = 'gray30', linetype = 'dashed')
 
     } else if (!allele_only) {
         p = p + geom_line(
