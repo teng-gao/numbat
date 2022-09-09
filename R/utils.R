@@ -204,16 +204,43 @@ get_exp_bulk = function(count_mat, lambdas_ref, gtf, verbose = FALSE) {
 #' @param min_depth integer Minimum coverage to filter SNPs
 #' @return dataframe Pseudobulk allele profile
 #' @keywords internal
-get_allele_bulk = function(df_allele, genetic_map, lambda = 1, min_depth = 0) {
-    df_allele %>%
-        filter(GT %in% c('1|0', '0|1')) %>%
-        group_by(snp_id, CHROM, POS, REF, ALT, GT, gene) %>%
-        summarise(
-            AD = sum(AD),
-            DP = sum(DP),
-            AR = AD/DP,
-            .groups = 'drop'
+get_allele_bulk = function(df_allele, gtf, genetic_map, lambda = 0.5, min_depth = 0) {
+
+    overlap_transcript = GenomicRanges::findOverlaps(
+            df_allele %>% {GenomicRanges::GRanges(
+                seqnames = .$CHROM,
+                IRanges::IRanges(start = .$POS,
+                    end = .$POS)
+            )},
+            gtf %>% {GenomicRanges::GRanges(
+                seqnames = .$CHROM,
+                IRanges::IRanges(start = .$gene_start,
+                    end = .$gene_end)
+            )}
         ) %>%
+        as.data.frame() %>%
+        setNames(c('snp_index', 'gene_index')) %>%
+        left_join(
+            df_allele %>% mutate(snp_index = 1:n()) %>%
+                select(snp_index, snp_id),
+            by = c('snp_index')
+        ) %>%
+        left_join(
+            gtf %>% mutate(gene_index = 1:n()),
+            by = c('gene_index')
+        ) %>%
+        arrange(snp_index, gene) %>%
+        distinct(snp_index, `.keep_all` = T)
+
+    df_allele = df_allele %>%
+        left_join(
+            overlap_transcript %>% select(snp_id, gene, gene_start, gene_end),
+            by = c('snp_id')
+        )
+
+    df_allele = df_allele %>%
+        mutate(AR = AD/DP) %>%
+        filter(GT %in% c('1|0', '0|1')) %>%
         arrange(CHROM, POS) %>%
         group_by(CHROM) %>%
         mutate(snp_index = as.integer(factor(snp_id, unique(snp_id)))) %>%
@@ -222,6 +249,7 @@ get_allele_bulk = function(df_allele, genetic_map, lambda = 1, min_depth = 0) {
         mutate(pBAF = ifelse(GT == '1|0', AR, 1-AR)) %>%
         mutate(pAD = ifelse(GT == '1|0', AD, DP - AD)) %>%
         mutate(CHROM = factor(CHROM, unique(CHROM))) %>%
+        filter(!(CHROM == 6 & POS < 33480577 & POS > 28510120)) %>%
         arrange(CHROM, POS) %>%
         annot_cm(genetic_map) %>%
         group_by(CHROM) %>%
@@ -232,6 +260,8 @@ get_allele_bulk = function(df_allele, genetic_map, lambda = 1, min_depth = 0) {
         ) %>%
         ungroup() %>%
         mutate(gene = ifelse(gene == '', NA, gene))
+
+    df_allele = df_allele %>% mutate(logFC = 0) %>% filter(DP > 0)
 }
 
 
@@ -1503,6 +1533,20 @@ approx_theta_post_1 = function(pAD, DP, R, p_s, t, upper = 0.45, start = 0.08, g
     return(tibble('theta_min' = mu))
 }
 
+trace_theta = function(pAD, DP, R, p_s, t, upper = 0.45, start = 0.08, gamma = 100, r = 0.015, theta_max = 0.5, step_size = 0.01) {
+
+    gamma = unique(gamma)
+    
+    thetas = seq(0, theta_max, step_size)
+
+    lik = sapply(
+        thetas,
+        function(theta) {calc_allele_lik_1(pAD, DP, R, p_s, t, abs(theta), gamma = gamma, r = r)}
+    )
+        
+    return(data.frame(theta = thetas, l = lik))
+}
+
 # naive HMM allelic imbalance MLE
 theta_mle_naive = function(MAD, DP, lower = 0.0001, upper = 0.4999, start = 0.25, gamma = 20) {
 
@@ -2154,17 +2198,41 @@ evaluate_calls = function(cnvs_dna, cnvs_call, gaps = gaps_hg38) {
 
 ########################### Experimental ############################
 
-analyze_allele = function(bulk, t = 1e-5, theta_min = 0.08, gamma = 20, lambda = 1, r = 0.015) {
+analyze_allele = function(bulk, t = 1e-5, theta_min = 0.08, gamma = 20, lambda = 0.5,
+     r = 0.015, fit_theta = FALSE, fit_gamma = FALSE, theta_start = 0.05, verbose = TRUE) {
 
     # update transition probablity
     bulk = bulk %>% 
         mutate(p_s = switch_prob_cm(inter_snp_cm, lambda = UQ(lambda))) %>%
         mutate(R = ifelse(pBAF == AR, -1, 1))
+
+    
+    if (fit_gamma) {
+        gamma = bulk %>% 
+            filter(!is.na(AD)) %>%
+            {fit_gamma(.$AD, .$DP, r = r)}
+
+        if (verbose) {
+            message(glue('Fitted gamma: {gamma}'))
+        }
+    }
+
+    if (fit_theta) {
+        if (verbose) {message('Fitting theta_min ..')}
+        bulk = bulk %>%
+            group_by(CHROM) %>%
+            mutate(
+                approx_theta_post_1(pAD, DP, R, p_s, t = t, gamma = gamma, r = r, start = theta_start)
+            ) %>%
+            ungroup()
+    } else {
+        bulk$theta_min = theta_min
+    }
     
     bulk = bulk %>%
         group_by(CHROM) %>%
         mutate(
-            state = run_allele_hmm_1(pAD, DP, R, p_s, theta_min = theta_min, gamma = UQ(gamma)),
+            state = run_allele_hmm_1(pAD, DP, R, p_s, theta_min = unique(theta_min), gamma = UQ(gamma)),
             cnv_state = str_remove(state, '_up|_down')
         ) %>%
         mutate(
@@ -2405,4 +2473,113 @@ analyze_joint = function(
     bulk$gamma = gamma
 
     return(bulk)
+}
+
+fetch_bulk = function(sample, path = '~/GTEx/results/nodna') {
+    file = glue('{path}/{sample}_bulk.tsv.gz')
+    if (file.exists(file)) {
+        fread(file) %>% relevel_chrom()
+    } else {
+        data.frame()
+    }
+}
+
+fetch_bulks = function(samples, path, ncores = 1) {
+    mclapply(
+        mc.cores = ncores,
+        samples, 
+        function(sample) {
+        fetch_bulk(sample, path) %>% mutate(sample = sample)
+    }) %>% 
+    bind_rows() %>%
+    mutate(sample = factor(sample, samples))
+}
+
+plot_cyto = function(segs, width = 0.5, col = 'cnv_state') {
+    
+    D = segs %>%
+        mutate(col = get(col)) %>%
+        mutate(CHROM = factor(CHROM, 1:22)) %>%
+        mutate(seg_size = seg_end - seg_start) %>%
+        arrange(col, round(seg_start/1e7), -seg_size) %>%
+        group_by(CHROM) %>%
+        mutate(index = as.integer(factor(sample, unique(sample)))) %>% 
+        ungroup()
+        
+    cytoband = fread('~/ref/chromosome.band.hg38.txt') %>% 
+        setNames(c('CHROM', 'start', 'end', 'name', 'stain')) %>%
+        mutate(CHROM = str_remove(CHROM, 'chr')) %>%
+        filter(CHROM %in% 1:22) %>%
+        mutate(CHROM = factor(CHROM, 1:22)) 
+
+    chrom_lens = fread('~/ref/hg38.chrom.sizes.txt') %>%
+        setNames(c('CHROM', 'length')) %>%
+        mutate(CHROM = str_remove(CHROM, 'chr')) %>%
+        filter(CHROM %in% 1:22) %>%
+        mutate(CHROM = factor(CHROM, 1:22))
+
+    cyto_colors = c(
+        'gpos100'= rgb(0/255.0,0/255.0,0/255.0),
+        'gpos'   = rgb(0/255.0,0/255.0,0/255.0),
+        'gpos75' = rgb(130/255.0,130/255.0,130/255.0),
+        'gpos66' = rgb(160/255.0,160/255.0,160/255.0),
+        'gpos50' = rgb(200/255.0,200/255.0,200/255.0),
+        'gpos33' = rgb(210/255.0,210/255.0,210/255.0),
+        'gpos25' = rgb(200/255.0,200/255.0,200/255.0),
+        'gvar'   = rgb(220/255.0,220/255.0,220/255.0),
+        'gneg'  = rgb(255/255.0,255/255.0,255/255.0),
+        'acen'  = rgb(217/255.0,47/255.0,39/255.0),
+        'stalk' = rgb(100/255.0,127/255.0,164/255.0)
+    )
+
+    p = ggplot(
+        D,
+        aes(x = seg_start, xend = seg_end, y = index, yend = index)
+    ) +
+    geom_rect(
+        inherit.aes = F,
+        data = chrom_lens %>% filter(CHROM %in% D$CHROM),
+        aes(xmin = 0, xmax = length, ymin = -2, ymax = -0.5),
+        color = 'black',
+        fill = 'white',
+        size = 1
+    ) +
+    geom_rect(
+        data = cytoband %>% filter(CHROM %in% D$CHROM),
+        inherit.aes = F,
+        aes(xmin = start, xmax = end, ymin = -2, ymax = -0.5, fill = stain),
+        size = 1,
+        show.legend = FALSE
+    ) +
+    scale_fill_manual(values = cyto_colors) +
+    geom_segment(
+        aes(color = col),
+        lineend = 'round',
+        size = width,
+    #     color = 'darkgreen'
+    ) +
+    theme_void() +
+    theme(
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        axis.title = element_blank(),
+        legend.position = 'right',
+        panel.spacing.y = unit(0, "lines"),
+        plot.margin = unit(c(0,1,0,0), "cm"),
+        strip.text.y = element_text(size = 10, hjust = 0.5, angle = 0),
+        panel.border = element_blank(),
+        strip.background = element_blank()
+    ) +
+    scale_y_discrete(expand = expansion(add = 1)) +
+    scale_x_discrete(expand = c(0.02,0)) +
+    facet_grid(.~CHROM, space = 'free', scales = 'free', switch="both") +
+    xlab('') +
+    ylab('') +
+    labs(color = '')
+    
+    if (col == 'cnv_state') {
+        p = p + scale_color_manual(values = cnv_colors, drop = TRUE, limits = force)
+    }
+    
+    return(p)
 }

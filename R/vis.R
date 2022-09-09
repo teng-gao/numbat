@@ -134,7 +134,7 @@ plot_psbulk = function(
             aes(yintercept = y),
             size = 0
         ) +
-        scale_alpha_discrete(range = c(dot_alpha, 1)) +
+        suppressWarnings(scale_alpha_discrete(range = c(dot_alpha, 1))) +
         scale_shape_manual(values = c(`FALSE` = 16, `TRUE` = 15)) +
         theme_classic() +
         theme(
@@ -154,7 +154,7 @@ plot_psbulk = function(
         ) +
         guides(color = guide_legend(title = "", override.aes = aes(size = 3)), fill = 'none', alpha = 'none', shape = 'none') +
         xlab(marker) +
-        ylab('')
+        ylab('') 
 
     if (!allele_only) {
         p = p + geom_hline(
@@ -265,7 +265,6 @@ plot_bulks = function(
         bulks$sample = 1
     }
 
-    options(warn = -1)
     plot_list = bulks %>%
         split(.$sample) %>%
         lapply(
@@ -295,7 +294,6 @@ plot_bulks = function(
                 return(p)
             }
         )
-    options(warn = 0)
 
     panel = wrap_plots(plot_list, ncol = ncol, guides = 'collect')
 
