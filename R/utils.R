@@ -185,6 +185,7 @@ get_exp_bulk = function(count_mat, lambdas_ref, gtf, verbose = FALSE) {
         mutate(gene = droplevels(factor(gene, gtf$gene))) %>%
         mutate(gene_index = as.integer(gene)) %>%
         arrange(gene) %>%
+        mutate(gene = as.character(gene)) %>%
         mutate(CHROM = factor(CHROM)) %>%
         mutate(
             logFC = log2(lambda_obs) - log2(lambda_ref),
@@ -262,6 +263,8 @@ get_allele_bulk = function(df_allele, gtf, genetic_map, lambda = 0.5, min_depth 
         mutate(gene = ifelse(gene == '', NA, gene))
 
     df_allele = df_allele %>% mutate(logFC = 0) %>% filter(DP > 0)
+
+    return(df_allele)
 }
 
 
@@ -270,17 +273,16 @@ get_allele_bulk = function(df_allele, gtf, genetic_map, lambda = 0.5, min_depth 
 #' @param genetic_map dataframe Genetic map
 #' @return dataframe Pseudobulk allele and expression profile
 #' @keywords internal
-combine_bulk = function(allele_bulk, exp_bulk) {
-    
+combine_bulk = function(allele_bulk, exp_bulk, gtf) {
+
     bulk = allele_bulk %>% 
+        select(-any_of(c("gene_start", "gene_end", "logFC"))) %>%
         full_join(
             exp_bulk,
             by = c("CHROM", "gene")
         ) %>%
         mutate(
             snp_id = ifelse(is.na(snp_id), gene, snp_id),
-            # levels will be missing if not expressed
-            gene = factor(gene, levels(exp_bulk$gene)),
             POS = ifelse(is.na(POS), gene_start, POS),
             # phase switch is forbidden if not heteroSNP
             p_s = ifelse(is.na(p_s), 0, p_s)
@@ -357,6 +359,7 @@ get_bulk = function(count_mat, lambdas_ref, df_allele, gtf, genetic_map, min_dep
 
     allele_bulk = get_allele_bulk(
         df_allele,
+        gtf,
         genetic_map,
         lambda = lambda,
         min_depth = min_depth)
@@ -377,10 +380,25 @@ get_bulk = function(count_mat, lambdas_ref, df_allele, gtf, genetic_map, min_dep
         lambda_ref = ifelse(lambda_ref == 0, NA, lambda_ref)
     )
 
+    # reannotate lost genes after joining
+    gene_dict = allele_bulk %>% filter(!is.na(gene)) %>% 
+        {setNames(.$gene, .$snp_id)} 
+
+    bulk = bulk %>% 
+        mutate(gene = ifelse(snp_id %in% names(gene_dict), gene_dict[as.character(snp_id)], gene)) %>% 
+        select(-any_of(c('gene_start', 'gene_end', 'gene_length'))) %>%
+        left_join(
+            gtf %>% select(gene, gene_start, gene_end),
+            by = 'gene'
+        ) %>% 
+        mutate(gene_index = as.integer(factor(gene, unique(gene[gene != '' | is.na(gene)]))))
+
     bulk = bulk %>%
         mutate(CHROM = as.character(CHROM)) %>%
         mutate(CHROM = ifelse(CHROM == 'X', 23, CHROM)) %>%
         mutate(CHROM = factor(as.integer(CHROM)))
+
+    return(bulk)
 }
 
 #' Fit a reference profile from multiple references using constrained least square
@@ -1341,18 +1359,32 @@ fit_bbinom = function(AD, DP) {
 #' @param DP numeric vector Total allele depth
 #' @return a fit
 #' @keywords internal
-fit_gamma = function(AD, DP, r = 0.015, start = 20) {
+# fit_gamma = function(AD, DP, r = 0.015, start = 20) {
 
-    fit = stats4::mle(
-        minuslogl = function(gamma) {
+#     fit = stats4::mle(
+#         minuslogl = function(gamma) {
+#             -l_bbinom(AD, DP, gamma * (0.5 - r), gamma * (0.5 + r))
+#         },
+#         start = start,
+#         lower = 0.0001
+#     )
+
+#     gamma = fit@coef[1]
+
+#     return(gamma)
+# }
+
+fit_gamma = function(AD, DP, r = 0.015, start = 20) {
+    fit = optim(
+        par = start,
+        fn = function(gamma) {
             -l_bbinom(AD, DP, gamma * (0.5 - r), gamma * (0.5 + r))
         },
-        start = start,
-        lower = 0.0001
+        method = 'L-BFGS-B',
+        lower = 1e-04,
+        upper = 1e4
     )
-
-    gamma = fit@coef[1]
-
+    gamma = fit$par
     return(gamma)
 }
 
@@ -1505,7 +1537,7 @@ approx_theta_post = function(pAD, DP, R, p_s, upper = 0.499, start = 0.25, gamma
 }
 
 
-#' Laplace approximation of the posterior of allelic imbalance theta
+#' Find optimal theta using forward-backward
 #' @keywords internal
 approx_theta_post_1 = function(pAD, DP, R, p_s, t, upper = 0.45, start = 0.08, gamma = 20, r = 0.015) {
 
@@ -1527,10 +1559,8 @@ approx_theta_post_1 = function(pAD, DP, R, p_s, t, upper = 0.45, start = 0.08, g
         upper = upper,
         hessian = FALSE
     )
-    
-    mu = abs(fit$par)
-    
-    return(tibble('theta_min' = mu))
+        
+    return(tibble('theta_min' = abs(fit$par)))
 }
 
 trace_theta = function(pAD, DP, R, p_s, t, upper = 0.45, start = 0.08, gamma = 100, r = 0.015, theta_max = 0.5, step_size = 0.01) {
@@ -2232,7 +2262,7 @@ analyze_allele = function(bulk, t = 1e-5, theta_min = 0.08, gamma = 20, lambda =
     bulk = bulk %>%
         group_by(CHROM) %>%
         mutate(
-            state = run_allele_hmm_1(pAD, DP, R, p_s, theta_min = unique(theta_min), gamma = UQ(gamma)),
+            state = run_allele_hmm_1(pAD, DP, R, p_s, theta_min = unique(theta_min), gamma = UQ(gamma), r = r),
             cnv_state = str_remove(state, '_up|_down')
         ) %>%
         mutate(
@@ -2306,11 +2336,11 @@ find_diploid = function(
     bulk = bulk %>% 
         group_by(CHROM) %>%
         mutate(
-            state = run_allele_hmm_1(pAD, DP, R, p_s, theta_min = theta_min, gamma = UQ(gamma), r = r),
+            state = run_allele_hmm_1(pAD, DP, R, p_s, theta_min = UQ(theta_min), gamma = UQ(gamma), r = r),
             cnv_state = str_remove(state, '_down|_up')
         ) %>% 
         ungroup()
-
+    
     bulk = bulk %>% mutate(diploid = cnv_state == 'neu')
 
     return(bulk)
@@ -2352,12 +2382,12 @@ approx_phi_map = function(Y_obs, lambda_ref, d, mu, sig, lower = 0.2, upper = 10
 
 analyze_joint = function(
     bulk, t = 1e-5, gamma = 20, beta = 2000, eta = 100, theta_min = 0.08, logphi_min = 0.25,
-    lambda = 1, min_genes = 10, r = 0.015, exclude_neu = TRUE, fit_gamma = TRUE, fit_theta = TRUE, verbose = TRUE
+    lambda = 1, min_genes = 10, r = 0.015, theta_start = 0.05, exclude_neu = TRUE, fit_gamma = TRUE, fit_theta = TRUE, verbose = TRUE
 ) {
     
     # update transition probablity
     bulk = bulk %>% 
-        filter(DP > 0) %>%
+        filter(DP > 0 | is.na(DP)) %>%
         mutate(p_s = switch_prob_cm(inter_snp_cm, lambda = UQ(lambda))) %>%
         mutate(R = ifelse(pBAF == AR, -1, 1))
 
@@ -2393,7 +2423,8 @@ analyze_joint = function(
         bulk = bulk %>%
             group_by(CHROM) %>%
             mutate(
-                approx_theta_post_1(pAD[!is.na(pAD)], DP[!is.na(pAD)], R[!is.na(pAD)], p_s[!is.na(pAD)], t = t, gamma = gamma, r = r)
+                approx_theta_post_1(pAD[!is.na(pAD)], DP[!is.na(pAD)], R[!is.na(pAD)], p_s[!is.na(pAD)], 
+                    t = t, gamma = gamma, r = r, start = theta_start)
             ) %>%
             ungroup()
     } else {
@@ -2495,91 +2526,47 @@ fetch_bulks = function(samples, path, ncores = 1) {
     mutate(sample = factor(sample, samples))
 }
 
-plot_cyto = function(segs, width = 0.5, col = 'cnv_state') {
+randomize_phase = function(bulk_seg, n = 100, r = 0.015) {
     
-    D = segs %>%
-        mutate(col = get(col)) %>%
-        mutate(CHROM = factor(CHROM, 1:22)) %>%
-        mutate(seg_size = seg_end - seg_start) %>%
-        arrange(col, round(seg_start/1e7), -seg_size) %>%
-        group_by(CHROM) %>%
-        mutate(index = as.integer(factor(sample, unique(sample)))) %>% 
-        ungroup()
+    LLR_0 = bulk_seg %>%
+        filter(!is.na(pAD)) %>%
+        summarise(
+            LLR_y = calc_allele_LLR(pAD, DP, R, p_s, unique(na.omit(theta_mle)), gamma = unique(gamma), r = r)
+        ) %>%
+        pull(LLR_y) %>%
+        unique()
+    
+    LLR_sim = sapply(
+        1:n, function(i) {
+            
+            set.seed(i)
+            
+            LLR = bulk_seg %>%
+                filter(!is.na(pAD)) %>%
+                group_by(gene) %>%
+                mutate(
+                    GT = ifelse(
+                        rep(sample(c(TRUE, FALSE), size = 1), n()),
+                        GT, c('0|1' = '1|0', '1|0' = '0|1')[GT])
+                ) %>%
+                ungroup() %>%
+                mutate(
+                    pBAF = ifelse(GT == '1|0', AR, 1-AR),
+                    pAD = ifelse(GT == '1|0', AD, DP - AD),
+                    R = ifelse(pBAF == AR, -1, 1)
+                ) %>%
+                summarise(
+                    LLR_y = calc_allele_LLR(pAD, DP, R, p_s, unique(na.omit(theta_mle)), gamma = unique(gamma), r = r)
+                ) %>%
+                pull(LLR_y)
+            
+            LLR
+    })
         
-    cytoband = fread('~/ref/chromosome.band.hg38.txt') %>% 
-        setNames(c('CHROM', 'start', 'end', 'name', 'stain')) %>%
-        mutate(CHROM = str_remove(CHROM, 'chr')) %>%
-        filter(CHROM %in% 1:22) %>%
-        mutate(CHROM = factor(CHROM, 1:22)) 
-
-    chrom_lens = fread('~/ref/hg38.chrom.sizes.txt') %>%
-        setNames(c('CHROM', 'length')) %>%
-        mutate(CHROM = str_remove(CHROM, 'chr')) %>%
-        filter(CHROM %in% 1:22) %>%
-        mutate(CHROM = factor(CHROM, 1:22))
-
-    cyto_colors = c(
-        'gpos100'= rgb(0/255.0,0/255.0,0/255.0),
-        'gpos'   = rgb(0/255.0,0/255.0,0/255.0),
-        'gpos75' = rgb(130/255.0,130/255.0,130/255.0),
-        'gpos66' = rgb(160/255.0,160/255.0,160/255.0),
-        'gpos50' = rgb(200/255.0,200/255.0,200/255.0),
-        'gpos33' = rgb(210/255.0,210/255.0,210/255.0),
-        'gpos25' = rgb(200/255.0,200/255.0,200/255.0),
-        'gvar'   = rgb(220/255.0,220/255.0,220/255.0),
-        'gneg'  = rgb(255/255.0,255/255.0,255/255.0),
-        'acen'  = rgb(217/255.0,47/255.0,39/255.0),
-        'stalk' = rgb(100/255.0,127/255.0,164/255.0)
+    p = mean(LLR_sim >= LLR_0)
+    
+    return(
+        data.frame('seg' = unique(bulk_seg$seg), 'sim_mean' = mean(LLR_sim), 
+        'sim_sd' = sd(LLR_sim), 'p_sim' = p, 'LLR_0' = LLR_0)
     )
-
-    p = ggplot(
-        D,
-        aes(x = seg_start, xend = seg_end, y = index, yend = index)
-    ) +
-    geom_rect(
-        inherit.aes = F,
-        data = chrom_lens %>% filter(CHROM %in% D$CHROM),
-        aes(xmin = 0, xmax = length, ymin = -2, ymax = -0.5),
-        color = 'black',
-        fill = 'white',
-        size = 1
-    ) +
-    geom_rect(
-        data = cytoband %>% filter(CHROM %in% D$CHROM),
-        inherit.aes = F,
-        aes(xmin = start, xmax = end, ymin = -2, ymax = -0.5, fill = stain),
-        size = 1,
-        show.legend = FALSE
-    ) +
-    scale_fill_manual(values = cyto_colors) +
-    geom_segment(
-        aes(color = col),
-        lineend = 'round',
-        size = width,
-    #     color = 'darkgreen'
-    ) +
-    theme_void() +
-    theme(
-        axis.text = element_blank(),
-        axis.ticks = element_blank(),
-        axis.title = element_blank(),
-        legend.position = 'right',
-        panel.spacing.y = unit(0, "lines"),
-        plot.margin = unit(c(0,1,0,0), "cm"),
-        strip.text.y = element_text(size = 10, hjust = 0.5, angle = 0),
-        panel.border = element_blank(),
-        strip.background = element_blank()
-    ) +
-    scale_y_discrete(expand = expansion(add = 1)) +
-    scale_x_discrete(expand = c(0.02,0)) +
-    facet_grid(.~CHROM, space = 'free', scales = 'free', switch="both") +
-    xlab('') +
-    ylab('') +
-    labs(color = '')
-    
-    if (col == 'cnv_state') {
-        p = p + scale_color_manual(values = cnv_colors, drop = TRUE, limits = force)
-    }
-    
-    return(p)
 }

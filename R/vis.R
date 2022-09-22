@@ -170,6 +170,7 @@ plot_psbulk = function(
     if (use_pos & exclude_gap) {
         
         segs_exclude = gaps_hg38 %>% filter(end - start > 1e+06) %>% 
+            rbind(acen_hg38) %>%
             rename(seg_start = start, seg_end = end) %>%
             filter(CHROM %in% bulk$CHROM)
 
@@ -1346,4 +1347,241 @@ plot_clone_profile = function(joint_post, clone_post) {
     panel = (p_bubble | p_heatmap) + plot_layout(widths = c(0.5,20))
     
     return(panel)
+}
+
+plot_forest <- function(class_results, x = "class", y = "estimate", ymin = "conf.low", ymax = "conf.high",
+                       label = "p.label", limits = NULL, breaks = waiver(), title = "", col = NULL, fill = NULL,
+                        dodge_width = 0.8, outer_limit_arrows = FALSE, ps=3, eb_w=0.4, eb_s=0.4, or_s=4, OR=T, yinter = 1,
+                        nudge = 0, base_plot = geom_blank(), bar_col = 'black') {
+    # suppressWarnings(ggthemr::ggthemr("fresh"))
+  #' Forest plot of the coefficients in 'class_results'
+  output_plot <- ggplot(class_results, aes_string(x = x, y = y, ymin = ymin, ymax = ymax, col = col, fill = fill, label = label, vjust = nudge)) +
+    base_plot +
+    geom_hline(yintercept = yinter, color = "gray", linetype = "solid") +
+    geom_errorbar(position = position_dodge(width = dodge_width), width = eb_w, size=eb_s) +
+    geom_point(position = position_dodge(width = dodge_width), size=ps) +
+    geom_text(position = position_dodge(width = dodge_width), size = or_s, alpha = .9) +
+    coord_flip() +
+    ggtitle(title)
+
+  if (OR==T) {
+  output_plot <-  output_plot +
+    scale_y_log10(limits = limits, breaks = breaks)
+  }
+
+  if (outer_limit_arrows) {
+    stopifnot(length(limits) > 0)
+    # Check for errorbar values outside
+    class_results[, "ymin_out"] <- ifelse(class_results[, ymin] < limits[1], limits[1], NA)
+    class_results[, "linestyle_min"] <- ifelse(class_results[, ymin] < limits[1], "b", NA)
+    class_results[, "ymax_out"] <- ifelse(class_results[, ymax] > limits[2], limits[2], NA)
+    class_results[, "linestyle_max"] <- ifelse(class_results[, ymax] > limits[2], "b", NA)
+
+    output_plot <- output_plot + geom_linerange(data = class_results,
+                                                aes_string(x = x, ymin = "ymin_out", ymax = ymax), linetype = 3, position = position_dodge(width = dodge_width))
+    output_plot <- output_plot + geom_linerange(data = class_results,
+                                                aes_string(x = x, ymin = ymin, ymax = "ymax_out"), linetype = 3, position = position_dodge(width = dodge_width))
+    output_plot <- output_plot + geom_linerange(data = class_results,
+                                                aes_string(x = x, ymin = "ymin_out", ymax = "ymax_out"), linetype = 3, position = position_dodge(width = dodge_width))
+
+  }
+  return(output_plot)
+}
+
+
+plot_cyto = function(segs, width = 0.5, col = 'cnv_state', keep_chroms = FALSE) {
+    
+    D = segs %>%
+        mutate(col = get(col)) %>%
+        mutate(CHROM = factor(CHROM, 1:22)) %>%
+        mutate(seg_size = seg_end - seg_start) %>%
+        arrange(col, round(seg_start/1e7), -seg_size) %>%
+        group_by(CHROM) %>%
+        mutate(index = as.integer(factor(sample, unique(sample)))) %>% 
+        ungroup()
+        
+    cytoband = fread('~/ref/chromosome.band.hg38.txt') %>% 
+        setNames(c('CHROM', 'start', 'end', 'name', 'stain')) %>%
+        mutate(CHROM = str_remove(CHROM, 'chr')) %>%
+        filter(CHROM %in% 1:22) %>%
+        mutate(CHROM = factor(CHROM, 1:22)) 
+
+    chrom_lens = fread('~/ref/hg38.chrom.sizes.txt') %>%
+        setNames(c('CHROM', 'length')) %>%
+        mutate(CHROM = str_remove(CHROM, 'chr')) %>%
+        filter(CHROM %in% 1:22) %>%
+        mutate(CHROM = factor(CHROM, 1:22))
+
+    cyto_colors = c(
+        'gpos100'= rgb(0/255.0,0/255.0,0/255.0),
+        'gpos'   = rgb(0/255.0,0/255.0,0/255.0),
+        'gpos75' = rgb(130/255.0,130/255.0,130/255.0),
+        'gpos66' = rgb(160/255.0,160/255.0,160/255.0),
+        'gpos50' = rgb(200/255.0,200/255.0,200/255.0),
+        'gpos33' = rgb(210/255.0,210/255.0,210/255.0),
+        'gpos25' = rgb(200/255.0,200/255.0,200/255.0),
+        'gvar'   = rgb(220/255.0,220/255.0,220/255.0),
+        'gneg'  = rgb(255/255.0,255/255.0,255/255.0),
+        'acen'  = rgb(217/255.0,47/255.0,39/255.0),
+        'stalk' = rgb(100/255.0,127/255.0,164/255.0)
+    )
+
+    p = ggplot(
+        D,
+        aes(x = seg_start, xend = seg_end, y = index, yend = index)
+    ) +
+    geom_rect(
+        inherit.aes = F,
+        data = chrom_lens %>% filter(CHROM %in% D$CHROM | keep_chroms),
+        aes(xmin = 0, xmax = length, ymin = -2, ymax = -0.5),
+        color = 'black',
+        fill = 'white',
+        size = 1
+    ) +
+    geom_rect(
+        data = cytoband %>% filter(CHROM %in% D$CHROM | keep_chroms),
+        inherit.aes = F,
+        aes(xmin = start, xmax = end, ymin = -2, ymax = -0.5, fill = stain),
+        size = 1,
+        show.legend = FALSE
+    ) +
+    scale_fill_manual(values = cyto_colors) +
+    geom_segment(
+        aes(color = col),
+        lineend = 'round',
+        size = width,
+    #     color = 'darkgreen'
+    ) +
+    theme_void() +
+    theme(
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        axis.title = element_blank(),
+        legend.position = 'right',
+        panel.spacing.y = unit(0, "lines"),
+        plot.margin = unit(c(0,1,0,0), "cm"),
+        strip.text.y = element_text(size = 10, hjust = 0.5, angle = 0),
+        panel.border = element_blank(),
+        strip.background = element_blank()
+    ) +
+    scale_y_discrete(expand = expansion(add = 1)) +
+    scale_x_discrete(expand = c(0.02,0)) +
+    facet_grid(.~CHROM, space = 'free', scales = 'free', switch="both") +
+    xlab('') +
+    ylab('') +
+    labs(color = '')
+    
+    if (col == 'cnv_state') {
+        p = p + scale_color_manual(values = cnv_colors, drop = TRUE, limits = force)
+    }
+    
+    return(p)
+}
+
+plot_cyto_circular = function(segs, width = 0.5, col = 'cnv_state', keep_chroms = FALSE, gap_size = 2e7, label_size = 1, cyto_width = 100) {
+     
+    cytoband = fread('~/ref/chromosome.band.hg38.txt') %>% 
+        setNames(c('CHROM', 'start', 'end', 'name', 'stain')) %>%
+        mutate(CHROM = str_remove(CHROM, 'chr')) %>%
+        filter(CHROM %in% 1:22) %>%
+        mutate(CHROM = factor(CHROM, 1:22)) 
+
+    chrom_lens = fread('~/ref/hg38.chrom.sizes.txt') %>%
+        setNames(c('CHROM', 'length')) %>%
+        mutate(CHROM = str_remove(CHROM, 'chr')) %>%
+        filter(CHROM %in% 1:22) %>%
+        mutate(CHROM = factor(CHROM, 1:22))
+
+    cyto_colors = c(
+        'gpos100'= rgb(0/255.0,0/255.0,0/255.0),
+        'gpos'   = rgb(0/255.0,0/255.0,0/255.0),
+        'gpos75' = rgb(130/255.0,130/255.0,130/255.0),
+        'gpos66' = rgb(160/255.0,160/255.0,160/255.0),
+        'gpos50' = rgb(200/255.0,200/255.0,200/255.0),
+        'gpos33' = rgb(210/255.0,210/255.0,210/255.0),
+        'gpos25' = rgb(200/255.0,200/255.0,200/255.0),
+        'gvar'   = rgb(220/255.0,220/255.0,220/255.0),
+        'gneg'  = rgb(255/255.0,255/255.0,255/255.0),
+        'acen'  = rgb(217/255.0,47/255.0,39/255.0),
+        'stalk' = rgb(100/255.0,127/255.0,164/255.0)
+    )
+
+    chrom_lens = chrom_lens %>%
+        mutate(CHROM = factor(CHROM, 1:22)) %>%
+        arrange(CHROM) %>%
+        mutate(chr_start = cumsum(c(0, as.numeric(length[1:(n()-1)] + gap_size))))
+
+    D = segs %>%
+        mutate(col = get(col)) %>%
+        mutate(CHROM = factor(CHROM, 1:22)) %>%
+        mutate(seg_size = seg_end - seg_start) %>%
+        arrange(col, round(seg_start/1e7), -seg_size) %>%
+        group_by(CHROM) %>%
+        mutate(index = 10 * as.integer(factor(sample, unique(sample)))) %>% 
+        ungroup() %>%
+        left_join(chrom_lens, by = 'CHROM') %>%
+        mutate(seg_start = seg_start + chr_start, seg_end = seg_end + chr_start)
+
+    p = ggplot(
+            D,
+            aes(x = seg_start, xend = seg_end, y = index, yend = index)
+        ) +
+        geom_rect(
+            inherit.aes = F,
+            data = chrom_lens,
+            aes(xmin = chr_start, xmax = length + chr_start, ymin = -10-cyto_width, ymax = -10),
+            color = 'black',
+            fill = 'white',
+            size = 0.1
+        ) +
+        geom_rect(
+            data = cytoband %>%
+                filter(CHROM %in% D$CHROM | keep_chroms) %>%
+                left_join(chrom_lens, by = "CHROM") %>%
+                mutate(start = chr_start + start, end = chr_start + end),
+            inherit.aes = F,
+            aes(xmin = start, xmax = end, ymin = -10 - cyto_width, ymax = -10, fill = stain),
+            size = 1,
+            show.legend = FALSE
+        ) +
+        geom_text(
+            inherit.aes = F,
+            data = chrom_lens %>% 
+                filter(CHROM %in% D$CHROM | keep_chroms) %>%
+                mutate(angle = -(360/22)*as.integer(CHROM)),
+            aes(x = length/2 + chr_start, y = -10-cyto_width*2, label = CHROM),
+            color = 'black',
+            size = label_size
+        ) +
+        scale_fill_manual(values = cyto_colors) +
+        geom_segment(
+            aes(color = col),
+            lineend = 'round',
+            size = width,
+        ) +
+        theme_void() +
+        theme(
+            axis.text = element_blank(),
+            axis.ticks = element_blank(),
+            axis.title = element_blank(),
+            legend.position = 'right',
+            panel.spacing.y = unit(0, "lines"),
+            plot.margin = unit(c(0,0,0,0), "cm"),
+            strip.text.y = element_text(size = 10, hjust = 0.5, angle = 0),
+            panel.border = element_blank(),
+            strip.background = element_blank()
+        ) +
+        scale_y_continuous(expand = expansion(add = c(1000, 0))) +
+        scale_x_discrete(expand = expansion(add = gap_size/2)) +
+        xlab('') +
+        ylab('') +
+        labs(color = '') +
+        coord_polar(start = pi)
+    
+    if (col == 'cnv_state') {
+        p = p + scale_color_manual(values = cnv_colors, drop = TRUE, limits = force)
+    }
+    
+    return(p)
+
 }
