@@ -348,6 +348,8 @@ run_joint_hmm = function(
     # transition matrices
     As = calc_trans_mat(t, p_s, w, states_cn, states_phase)
 
+    # display(As[,,10])
+
     theta_u = 0.5 + theta_min
     theta_d = 0.5 - theta_min
 
@@ -399,7 +401,7 @@ calc_trans_mat = function(t, p_s, w, states_cn, states_phase) {
 
     sapply(1:length(states_cn), function(from) {
         sapply(1:length(states_cn), function(to) {
-            get_trans_probs(t, p_s, w, states_cn[from], states_phase[from], states_cn[to], states_phase[to])
+            get_trans_probs_1(t, p_s, w, states_cn[from], states_phase[from], states_cn[to], states_phase[to])
         }) %>% t
     }) %>% t %>%
     array(dim = c(length(states_cn), length(states_cn), length(p_s)))
@@ -426,6 +428,36 @@ get_trans_probs = function(t, p_s, w, cn_from, phase_from, cn_to, phase_to) {
             p = (1-t) * p_s
         }
     } else {
+        p = t * w[[cn_to]]/sum(w[names(w)!=cn_from])
+        if (!is.na(phase_to)) {
+            p = p/2
+        }
+        p = rep(p, length(p_s))
+    }
+    
+    return(p)
+}
+
+# forbid transition between aberrant states
+get_trans_probs_1 = function(t, p_s, w, cn_from, phase_from, cn_to, phase_to) {
+
+    if (cn_from == 'neu' & cn_to == 'neu') {
+        p_s = rep(0.5, length(p_s))
+    }
+
+    if (cn_from == cn_to) {
+        if (is.na(phase_from) & is.na(phase_to)) {
+            p = 1-t
+            p = rep(p, length(p_s))
+        } else if (phase_from == phase_to) {
+            p = (1-t) * (1-p_s)
+        } else {
+            p = (1-t) * p_s
+        }
+    } else {
+        if (cn_from != 'neu') {
+            w[c('del', 'amp', 'loh')] = 0
+        }
         p = t * w[[cn_to]]/sum(w[names(w)!=cn_from])
         if (!is.na(phase_to)) {
             p = p/2

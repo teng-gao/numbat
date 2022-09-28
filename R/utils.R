@@ -950,7 +950,8 @@ phi_hat_roll = function(Y_obs, lambda_ref, d_obs, mu, sig, h) {
 }
 
 #' @export
-letters_all = c(letters, paste0(letters, letters), paste0(letters, letters, letters))
+letters_all = c(letters, paste0(letters, letters), paste0(letters, letters, letters), 
+    paste0(letters, letters, letters, letters), paste0(letters, letters, letters, letters, letters))
 
 #' Annotate copy number segments after HMM decoding 
 #' @param bulk dataframe Pseudobulk profile
@@ -2456,8 +2457,10 @@ analyze_joint = function(
         mutate(cnv_state = str_remove(state, '_down|_up')) %>%
         annot_segs(var = 'cnv_state') %>%
         smooth_segs(min_genes = min_genes) %>%
-        annot_segs(var = 'cnv_state') %>%
-        mutate(state = ifelse(cnv_state == 'neu', 'neu', state))
+        mutate(cnv = ifelse(cnv_state == 'neu', 0, 1)) %>%
+        annot_segs(var = 'cnv') %>%
+        mutate(state = ifelse(cnv_state == 'neu', 'neu', state)) %>% 
+        mutate(cnv = ifelse(cnv_state == 'neu', 0, 1))
 
     # annotate phi MLE
     bulk = bulk %>%
@@ -2467,7 +2470,9 @@ analyze_joint = function(
                 Y_obs[!is.na(Y_obs)], lambda_ref[!is.na(Y_obs)], unique(na.omit(d_obs)),
                 mu = mu[!is.na(Y_obs)],
                 sig = sig[!is.na(Y_obs)]
-            )
+            ),
+            p_amp = 1-pnorm(1, mean = phi_mle, sd = phi_mle_sig),
+            p_del = 1-p_amp
         ) %>%
         ungroup()
     
@@ -2495,7 +2500,15 @@ analyze_joint = function(
             'LLR_y', 'LLR_x'))) %>%
         left_join(segs_retest, by = 'seg')
 
-    bulk = bulk %>% mutate(cnv_state_post = cnv_state, state_post = state)
+    bulk = bulk %>% mutate(
+            cnv_state_post = case_when(
+                cnv_state == 'neu' ~ 'neu',
+                p_amp > 0.999 ~ 'amp',
+                p_del > 0.999 ~ 'del',
+                TRUE ~ 'loh' 
+            ),
+            state_post = state
+        )
 
     bulk = bulk %>% classify_alleles()
 

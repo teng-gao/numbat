@@ -1389,7 +1389,7 @@ plot_forest <- function(class_results, x = "class", y = "estimate", ymin = "conf
 }
 
 
-plot_cyto = function(segs, width = 0.5, col = 'cnv_state', keep_chroms = FALSE) {
+plot_cyto = function(segs, width = 0.5, col = 'cnv_state', keep_chroms = FALSE, layout = 'horizontal') {
     
     D = segs %>%
         mutate(col = get(col)) %>%
@@ -1466,10 +1466,19 @@ plot_cyto = function(segs, width = 0.5, col = 'cnv_state', keep_chroms = FALSE) 
     ) +
     scale_y_discrete(expand = expansion(add = 1)) +
     scale_x_discrete(expand = c(0.02,0)) +
-    facet_grid(.~CHROM, space = 'free', scales = 'free', switch="both") +
     xlab('') +
     ylab('') +
     labs(color = '')
+
+    if (layout == 'vertical') {
+        p = p + facet_grid(CHROM~., space = 'free', scales = 'free', switch="both") +
+            theme(
+                panel.spacing.y = unit(1, "lines"),
+                strip.text.y.left = element_text(size = 10, vjust = 0, angle = 0),
+            )
+    } else {
+        p = p + facet_grid(.~CHROM, space = 'free', scales = 'free', switch="both")
+    }
     
     if (col == 'cnv_state') {
         p = p + scale_color_manual(values = cnv_colors, drop = TRUE, limits = force)
