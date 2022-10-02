@@ -357,6 +357,10 @@ get_bulk = function(count_mat, lambdas_ref, df_allele, gtf, genetic_map, min_dep
         filter((logFC < 5 & logFC > -5) | Y_obs == 0) %>%
         mutate(sse = fit$sse)
 
+    if (verbose) {
+        message(paste0('Fitted weights: ', paste0(signif(fit$w, 2), collapse = ',')))
+    }
+
     allele_bulk = get_allele_bulk(
         df_allele,
         gtf,
