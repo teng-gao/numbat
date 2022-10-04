@@ -1389,14 +1389,14 @@ plot_forest <- function(class_results, x = "class", y = "estimate", ymin = "conf
 }
 
 
-plot_cyto = function(segs, width = 0.5, col = 'cnv_state', keep_chroms = FALSE, layout = 'horizontal') {
+plot_cyto = function(segs, width = 0.5, col = 'cnv_state', sort_by = col, index_by = 'CHROM', keep_chroms = FALSE, layout = 'horizontal') {
     
     D = segs %>%
-        mutate(col = get(col)) %>%
+        mutate(col = get(col), sort_by = get(sort_by), index_by = get(index_by)) %>%
         mutate(CHROM = factor(CHROM, 1:22)) %>%
         mutate(seg_size = seg_end - seg_start) %>%
-        arrange(col, round(seg_start/1e7), -seg_size) %>%
-        group_by(CHROM) %>%
+        arrange(sort_by, round(seg_start/1e7), -seg_size) %>%
+        group_by(CHROM, index_by) %>%
         mutate(index = as.integer(factor(sample, unique(sample)))) %>% 
         ungroup()
         

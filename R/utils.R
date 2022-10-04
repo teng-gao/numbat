@@ -2587,3 +2587,66 @@ randomize_phase = function(bulk_seg, n = 100, r = 0.015) {
         'sim_sd' = sd(LLR_sim), 'p_sim' = p, 'LLR_0' = LLR_0)
     )
 }
+
+######## More experimental ########
+
+compare_bulks = function(bulks, t = 1e-5, gamma = 20, ncores = 1) {
+        
+    bulks = bulks %>%
+        arrange(sample) %>%
+        mutate(sample = as.integer(factor(sample, unique(sample)))) %>%
+        select(-any_of('phi_mle')) %>%
+        arrange(CHROM, POS) %>%
+        mutate(snp_index = as.integer(factor(snp_id, unique(snp_id)))) %>%
+        group_by(CHROM) %>%
+        ungroup()
+
+    bulks_unified = bulks %>% select(sample, CHROM, POS, snp_id, snp_index, cM, pAD, DP, Y_obs, p_s, mu, sig, d_obs, lambda_ref) %>%
+        tidyr::pivot_wider(names_from = "sample", "values_from" = c("pAD", "DP")) %>%
+        mutate(
+            inter_snp_cm = c(NA, cM[2:length(cM)] - cM[1:(length(cM)-1)]),
+            p_s = switch_prob_cm(inter_snp_cm)
+        )
+        
+    logphi_min = 0.25
+    theta_min = unique(bulks$theta_mle)
+
+    hmm1 = bulks %>%
+        {get_joint_hmm(
+            pAD = .$pAD_1,
+            DP = .$DP_1, 
+            Y_obs = .$Y_obs_1, 
+            d_total = na.omit(unique(.$d_obs_1)),
+            p_s = .$p_s,
+            lambda_ref = .$lambda_ref_1, 
+            phi_amp = 2^(logphi_min),
+            phi_del = 2^(-logphi_min),
+            mu = .$mu_1,
+            sig = .$sig_1,
+            t = t,
+            gamma = gamma,
+            theta_min = theta_min
+        )}
+
+    hmm2 = bulks %>%
+        {get_joint_hmm(
+            pAD = .$pAD_2,
+            DP = .$DP_2, 
+            Y_obs = .$Y_obs_2, 
+            d_total = na.omit(unique(.$d_obs_2)),
+            p_s = .$p_s,
+            lambda_ref = .$lambda_ref_2, 
+            phi_amp = 2^(logphi_min),
+            phi_del = 2^(-logphi_min),
+            mu = .$mu_2,
+            sig = .$sig_2,
+            t = t,
+            gamma = gamma,
+            theta_min = theta_min
+        )}
+
+    LLR = compare_hmm(hmm1, hmm2)
+    
+    return(LLR)
+    
+}
