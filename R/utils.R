@@ -247,8 +247,12 @@ get_allele_bulk = function(df_allele, gtf, genetic_map, lambda = 0.5, min_depth 
         mutate(snp_index = as.integer(factor(snp_id, unique(snp_id)))) %>%
         ungroup() %>%
         filter(DP >= min_depth) %>%
-        mutate(pBAF = ifelse(GT == '1|0', AR, 1-AR)) %>%
-        mutate(pAD = ifelse(GT == '1|0', AD, DP - AD)) %>%
+        mutate(
+            pBAF = ifelse(GT == '1|0', AR, 1-AR),
+            pAD = ifelse(GT == '1|0', AD, DP - AD),
+            # R = ifelse(pBAF == AR, -1, 1),
+            R = ifelse(GT == '1|0', -1, 1)
+        ) %>%
         mutate(CHROM = factor(CHROM, unique(CHROM))) %>%
         filter(!(CHROM == 6 & POS < 33480577 & POS > 28510120)) %>%
         arrange(CHROM, POS) %>%
@@ -704,8 +708,6 @@ retest_cnv = function(bulk, theta_min = 0.08, logphi_min = 0.25, gamma = 20, r =
     # rolling theta estimates
     bulk = annot_theta_roll(bulk)
 
-    bulk = bulk %>% mutate(R = ifelse(pBAF == AR, -1, 1))
-
     if (exclude_neu) {
         bulk = bulk %>% filter(cnv_state != 'neu')
     }
@@ -817,7 +819,6 @@ classify_alleles = function(bulk) {
     }
     
     allele_post = allele_bulk %>%
-        mutate(R = ifelse(pBAF == AR, -1, 1)) %>%
         group_by(CHROM, seg) %>%
         mutate(
             p_up = forward_back_allele(get_allele_hmm(pAD, DP, R, p_s, theta = unique(theta_mle), gamma = 20))[,1],
@@ -1582,6 +1583,24 @@ trace_theta = function(pAD, DP, R, p_s, t, upper = 0.45, start = 0.08, gamma = 1
     return(data.frame(theta = thetas, l = lik))
 }
 
+#' Find optimal theta using forward-backward
+#' @keywords internal
+fit_allele_bias = function(AD, DP, gamma = 20) {
+
+    gamma = unique(gamma)
+
+    fit = optim(
+        0.01, 
+        function(r) {-l_bbinom(AD, DP, gamma * (0.5 - r), gamma * (0.5 + r))},
+        lower = -0.1,
+        upper = 0.1,
+        method = 'L-BFGS-B',
+        hessian = FALSE
+    )
+        
+    return(tibble('r' = fit$par))
+}
+
 # naive HMM allelic imbalance MLE
 theta_mle_naive = function(MAD, DP, lower = 0.0001, upper = 0.4999, start = 0.25, gamma = 20) {
 
@@ -2238,9 +2257,7 @@ analyze_allele = function(bulk, t = 1e-5, theta_min = 0.08, gamma = 20, lambda =
 
     # update transition probablity
     bulk = bulk %>% 
-        mutate(p_s = switch_prob_cm(inter_snp_cm, lambda = UQ(lambda))) %>%
-        mutate(R = ifelse(pBAF == AR, -1, 1))
-
+        mutate(p_s = switch_prob_cm(inter_snp_cm, lambda = UQ(lambda)))
     
     if (fit_gamma) {
         gamma = bulk %>% 
@@ -2393,8 +2410,7 @@ analyze_joint = function(
     # update transition probablity
     bulk = bulk %>% 
         filter(DP > 0 | is.na(DP)) %>%
-        mutate(p_s = switch_prob_cm(inter_snp_cm, lambda = UQ(lambda))) %>%
-        mutate(R = ifelse(pBAF == AR, -1, 1))
+        mutate(p_s = switch_prob_cm(inter_snp_cm, lambda = UQ(lambda)))
 
     bulk = find_diploid(bulk, gamma = gamma, t = t, theta_min = theta_min, r = r)
 
@@ -2570,7 +2586,8 @@ randomize_phase = function(bulk_seg, n = 100, r = 0.015) {
                 mutate(
                     pBAF = ifelse(GT == '1|0', AR, 1-AR),
                     pAD = ifelse(GT == '1|0', AD, DP - AD),
-                    R = ifelse(pBAF == AR, -1, 1)
+                    R = ifelse(GT == '1|0', -1, 1)
+                    # R = ifelse(pBAF == AR, -1, 1)
                 ) %>%
                 summarise(
                     LLR_y = calc_allele_LLR(pAD, DP, R, p_s, unique(na.omit(theta_mle)), gamma = unique(gamma), r = r)

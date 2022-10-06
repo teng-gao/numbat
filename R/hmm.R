@@ -39,6 +39,7 @@ get_allele_hmm = function(pAD, DP, R, p_s, theta, gamma = 20, r = 0.015) {
     
     prior = c(0.5, 0.5)
     theta_states = outer(R*r, c(0.5 + theta, 0.5 - theta), FUN = "+")
+    # theta_states = outer((1+2*R*r), c(0.5 + theta, 0.5 - theta), FUN = "*")
     theta_states = pmax(pmin(theta_states, 1),0)
     alpha_states = theta_states * gamma
     beta_states = (1 - theta_states) * gamma
@@ -240,6 +241,7 @@ get_allele_hmm_1 = function(pAD, DP, R, p_s, t, theta_min, gamma = 20, r = 0.015
         array(dim = c(M, M, N))
 
     theta_states = outer(R*r, c(0.5, 0.5 + theta_min, 0.5 - theta_min), FUN = "+")
+    # theta_states = outer((1+2*R*r), c(0.5, 0.5 + theta_min, 0.5 - theta_min), FUN = "*")
     theta_states = pmax(pmin(theta_states, 1),0)
     alpha_states = theta_states * gamma
     beta_states = (1 - theta_states) * gamma
@@ -366,6 +368,7 @@ run_joint_hmm = function(
     # parameters for each state
     theta_states = c(0.5, rep(c(theta_u, theta_d), 3))
     theta_states = outer(R*r, theta_states, FUN = "+")
+    # theta_states = outer((1+2*R*r), theta_states, FUN = "*")
     alpha_states = theta_states * gamma
     beta_states = (1 - theta_states) * gamma
     
